@@ -424,6 +424,12 @@
 
       const recommendedCard = `
         <div class="recommended-card" style="border:1px solid var(--border);padding:12px;border-radius:8px;background:#fff;margin-bottom:12px">
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <a class="primary" href="${rec.link}" target="_blank" style="text-decoration:none;display:inline-block">View Product Page</a>
+            <button id="requestQuoteBtn" class="primary" style="margin-left:8px">Request a Quote</button>
+            <button id="talkBtn" class="ghost" style="margin-left:8px">Talk to an Expert</button>
+          </div>
+
           <img src="${imgUrl}" alt="${modelName}" class="recommendation-image">
 
           <div style="color:var(--navy);font-weight:700;font-size:12px">RECOMMENDED SOLUTION</div>
@@ -436,12 +442,6 @@
           </div>
 
           ${featuresHTML}
-
-          <div style="display:flex;gap:8px;margin-top:12px">
-            <a class="primary" href="${rec.link}" target="_blank" style="text-decoration:none;display:inline-block">View Product Page</a>
-            <button id="requestQuoteBtn" class="primary" style="margin-left:8px">Request a Quote</button>
-            <button id="talkBtn" class="ghost" style="margin-left:8px">Talk to an Expert</button>
-          </div>
 
           <div style="margin-top:10px;color:var(--muted);font-size:13px">Total lift: ${Number(inputs.weight||0) + Number(inputs.engineWeight||0)} lbs</div>
 
