@@ -28,9 +28,9 @@
     p.lead{margin:0 0 14px 0;color:var(--muted)}
 
     .form{background:transparent;padding:0}
-    label{display:block;font-size:13px;color:var(--navy);margin-bottom:6px}
+    label{display:block;font-size:13px;color:var(--navy);margin-bottom:4px}
     .row{display:flex;gap:12px;margin-bottom:12px}
-    input[type=number],select{flex:1;padding:10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--navy);outline:none}
+    input[type=number],select{flex:1;padding:10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--navy);outline:none;margin-bottom:8px}
     .radio-row{display:flex;gap:8px;flex-wrap:wrap}
     .radio{background:#fff;border:1px solid var(--border);padding:8px 10px;border-radius:6px;color:var(--navy);cursor:pointer}
     .radio input{margin-right:8px}
@@ -48,6 +48,25 @@
 
     footer{margin-top:20px;color:var(--muted);font-size:13px}
     .wave{display:none}
+
+    /* Product preview image (centered, responsive) */
+    .product-preview{width:100%;max-width:300px;height:auto;display:block;margin:0 auto 16px auto;border-radius:6px}
+    .recommendation-image {
+      width: 100%;
+      max-height: 260px;
+      object-fit: contain;
+      margin-bottom: 16px;
+      border-radius: 8px;
+    }
+    .key-features {
+      margin-top: 10px;
+      padding-left: 18px;
+    }
+    .key-features li {
+      margin-bottom: 6px;
+      line-height: 1.4;
+    }
+    .recommended-card{display:block}
 
     @media(max-width:900px){.grid{grid-template-columns:1fr;}.side-card{order:2}}
   </style>
@@ -67,61 +86,56 @@
         <p class="lead">Answer a few questions and we’ll recommend the right davit or crane system for your boat.</p>
 
         <div class="form" id="selectorForm">
-          <div class="row">
-            <div style="flex:1">
-              <label for="boatLength">Boat Length (ft)</label>
-              <input id="boatLength" type="number" min="8" max="200" value="35" />
+          <div class="form-group">
+            <h4>Weight</h4>
+            <div class="row">
+              <div style="flex:1">
+                <label for="dinghyWeight">Dinghy Weight (lbs)</label>
+                <input id="dinghyWeight" type="number" min="10" max="5000" value="300" />
+              </div>
+              <div style="width:160px">
+                <label for="engineWeight">Outboard Engine Weight (lbs)</label>
+                <input id="engineWeight" type="number" min="0" max="2000" value="0" />
+              </div>
             </div>
           </div>
 
-          <div class="row">
-            <div style="flex:1">
-              <label for="dinghyWeight">Dinghy Weight (lbs)</label>
-              <input id="dinghyWeight" type="number" min="10" max="5000" value="300" />
-            </div>
-            <div style="width:160px">
-              <label for="engineWeight">Outboard Engine Weight (lbs)</label>
-              <input id="engineWeight" type="number" min="0" max="2000" value="0" />
-            </div>
-          </div>
-
-          <div style="margin-bottom:10px">
-            <label for="boatType">Boat Type <span style="color:var(--muted);font-size:12px">(required)</span></label>
-            <select id="boatType" required>
-              <option value="sailboat">Sailboat</option>
-              <option value="powerboat" selected>Powerboat</option>
-            </select>
-          </div>
-
-          <div style="margin-bottom:10px">
-            <label>Mounting Location</label>
-            <div class="radio-row">
+          <div class="form-group">
+            <h4>Mounting Location</h4>
+            <div class="radio-row mount-options">
               <label class="radio"><input name="mount" type="radio" value="swim" checked> Swim Platform</label>
               <label class="radio"><input name="mount" type="radio" value="transom"> Transom</label>
-              <label class="radio"><input name="mount" type="radio" value="arch"> Arch</label>
               <label class="radio"><input name="mount" type="radio" value="rail"> Rail</label>
               <label class="radio"><input name="mount" type="radio" value="deck"> Deck</label>
             </div>
           </div>
 
-
-          <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div>
-              <label for="tenderType">Tender Type</label>
-              <select id="tenderType">
-                <option value="inflatable" selected>Inflatable</option>
-                <option value="rib">RIB</option>
-                <option value="hardskiff">Hard Skiff</option>
+          <div class="form-group">
+            <h4>Configuration</h4>
+            <div style="margin-bottom:8px">
+              <label for="boatType">Boat Type <span style="color:var(--muted);font-size:12px">(required)</span></label>
+              <select id="boatType" required>
+                <option value="sailboat">Sailboat</option>
+                <option value="powerboat" selected>Powerboat</option>
               </select>
             </div>
-            <div>
-              <!-- engineWeight moved to its own numeric input above; keep this column reserved for future options -->
-              <label for="winchPref">Power / Winch Preference</label>
-              <select id="winchPref">
-                <option value="manual">Manual</option>
-                <option value="electric">Electric</option>
-                <option value="unsure" selected>Not sure</option>
-              </select>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <label for="tenderType">Tender Type</label>
+                <select id="tenderType">
+                  <option value="inflatable" selected>Inflatable</option>
+                  <option value="rib">RIB</option>
+                  <option value="hardskiff">Hard Skiff</option>
+                </select>
+              </div>
+              <div>
+                <label for="winchPref">Power / Winch Preference</label>
+                <select id="winchPref">
+                  <option value="manual">Manual</option>
+                  <option value="electric">Electric</option>
+                  <option value="unsure" selected>Not sure</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -132,7 +146,7 @@
           <div class="actions">
             <button type="button" class="primary" id="recommendBtn">Get Recommendation</button>
             <button type="button" class="ghost" id="resetBtn">Reset</button>
-            <a class="ghost" href="https://atkinshoyle.com/products" target="_blank" rel="noopener">View Products</a>
+            <a class="ghost" href="https://atkinshoyle.com/about.html">View All Products</a>
           </div>
         </div>
 
@@ -148,10 +162,7 @@
           <div class="product-sub">Fill the form and click <strong>Get Recommendation</strong> to see the best fit for your boat.</div>
         </div>
 
-        <div style="margin-top:12px">
-          <strong style="display:block;color:var(--sand)">Why this matters</strong>
-          <div style="color:rgba(255,255,255,0.8);font-size:13px;margin-top:6px">Selecting the correct davit/crane ensures safe launching, correct reach, and long-term durability in marine conditions.</div>
-        </div>
+        <!-- Replaced by per-model Key Features in the recommendation card -->
 
         <div id="quoteArea" class="quote" style="display:none">
           <!-- Inline quote form will be injected here -->
@@ -182,24 +193,137 @@
       MODEL_8000T: 800     // Model 8000T SWL (lbs)
     };
 
+    // Per-model curated feature summaries (short, sales-focused)
+    const KEY_FEATURES = {
+      '120': [
+        'Lifts up to 120 lbs (54 kg)',
+        'Compact, lightweight design for easy handling',
+        'Rail and transom mounting options',
+        'Smooth rotation on low-friction sleeves',
+        'Includes mounting hardware and pre-rigged line'
+      ],
+      '1200r': [
+        '200 lb rated rotating davit',
+        'Compact removable arm for neat storage',
+        'Adjustable standpipe height for reach',
+        'Smooth, low-maintenance rotation',
+        'Pre-rigged with quality line and blocks'
+      ],
+      '1400r': [
+        '250 lb rotating davit for larger inflatables',
+        'Adjustable angle and reach for versatile mounting',
+        'Robust cast components for longevity',
+        'Simple removal for winter storage',
+        'Complete kit with hardware and block-and-tackle'
+      ],
+      '1900r': [
+        '300 lb capacity with adjustable angle',
+        'Heavy-duty materials for marine environments',
+        'Smooth 360° rotation and locking collar',
+        'Ideal for 11’ RIBs and larger tenders',
+        'Supplied pre-rigged and ready to install'
+      ],
+      '1400f': [
+        '250 lb fixed davit for secure transom mounting',
+        'Adjustable base casting for custom angle',
+        'Compact, corrosion-resistant construction',
+        'Works well with small RIBs and outboards',
+        'Includes all mounting hardware'
+      ],
+      '1900f': [
+        '300 lb fixed davit for heavy-duty use',
+        'Adjustable angle for optimized reach',
+        'Solid cast components for long service life',
+        'Recommended for larger inflatables and motors',
+        'Complete kit with block-and-tackle'
+      ],
+      '2000': [
+        '350 lb rated fixed davit — high capacity, low weight',
+        'Sand-cast AlMag alloy construction for strength',
+        'Versatile mounting: deck, transom, swim platform',
+        'Optional riser arms for extended reach',
+        'Includes hardware and pre-rigged lifting line'
+      ],
+      '5000f': [
+        'Up to 750 lb lifting capacity for large tenders',
+        'Adjustable spline for precise boom angle',
+        'Heavy-duty cast construction and hardware',
+        'Optional electric winch compatibility',
+        'Complete installation kit included'
+      ],
+      '3000r': [
+        '300 lb rotating crane with wide reach',
+        '360° rotation and robust mounting options',
+        'Smooth manual winch with optional electric upgrade',
+        'Designed for deck, transom or hardtop installation',
+        'Supplied as a ready-to-install kit'
+      ],
+      '5000r': [
+        '500 lb rotating crane for heavy lifting',
+        'Strong, corrosion-resistant components',
+        'Optional power winch for effortless operation',
+        'Collapsible design for easy storage',
+        'Ideal for larger tenders and gear'
+      ],
+      '6500t': [
+        '650 lb low-profile crane with high capacity',
+        'Horizontal folding boom for compact storage',
+        'Optional electric winch and remote control',
+        'Robust installation kit included',
+        'Engineered for frequent heavy use'
+      ],
+      '8000t': [
+        'Exceptional 800 lb lifting capacity',
+        'Low-profile horizontal folding boom',
+        'Optional telescoping boom for added reach',
+        '12V electric winch operation available',
+        'Full installation kit and hardware included'
+      ],
+      '3000jr': [
+        'Compact 300 lb junior crane for limited spaces',
+        'Lightweight yet durable construction',
+        'Easy-to-remove head for storage',
+        'Smooth manual winch with optional electric upgrade',
+        'Versatile mount options for decks and rails'
+      ],
+      '1400c': [
+        '150 lb rotating crane — compact and nimble',
+        'Ideal for small outboards and accessories',
+        'Simple installation and low maintenance',
+        'Smooth rotation and secure locking',
+        'Pre-rigged kit for quick setup'
+      ],
+      '1900c': [
+        '200 lb rotating crane with robust build',
+        'Adjustable arm angle for reach control',
+        'Durable components suited to marine use',
+        'Good balance of capacity and compactness',
+        'Supplied as a ready-to-install kit'
+      ]
+    };
+
     const catalog = {
       // Rail mount davits (rail-mount only)
-      '120':  { key:'120',  title:'Model 120',  swl:CAPACITIES.MODEL_120,  link:'https://atkinshoyle.com/120-outboard-lift-capacity-of-120-lb.html', type:'davit', mount:'rail' },
-      '1200r':{ key:'1200r',title:'Model 1200R',swl:CAPACITIES.MODEL_1200R,link:'https://atkinshoyle.com/1200-rotating-davits-capacity-of-200-lbs.html', type:'davit', mount:'rail' },
-      '1400r':{ key:'1400r',title:'Model 1400R',swl:CAPACITIES.MODEL_1400R,link:'https://atkinshoyle.com/1400-rotating-davits-capacity-of-250-lbs.html', type:'davit', mount:'rail' },
-      '1900r':{ key:'1900r',title:'Model 1900R',swl:CAPACITIES.MODEL_1900R,link:'https://atkinshoyle.com/1900-rotating-davits-capacity-of-300-lbs.html', type:'davit', mount:'rail' },
+      '120':  { key:'120',  title:'Model 120',  swl:CAPACITIES.MODEL_120,  link:'https://atkinshoyle.com/120-outboard-lift-capacity-of-120-lb.html', type:'davit', mount:'rail', image:'https://atkinshoyle.com/uploads/products/120-motor-lift-main.JPG' },
+      '1200r':{ key:'1200r',title:'Model 1200R',swl:CAPACITIES.MODEL_1200R,link:'https://atkinshoyle.com/1200-rotating-davits-capacity-of-200-lbs.html', type:'davit', mount:'rail', image:'https://atkinshoyle.com/uploads/products/1200-rotating-davit-main.jpg' },
+      '1400r':{ key:'1400r',title:'Model 1400R',swl:CAPACITIES.MODEL_1400R,link:'https://atkinshoyle.com/1400-rotating-davits-capacity-of-250-lbs.html', type:'davit', mount:'rail', image:'https://atkinshoyle.com/uploads/products/1400-adjustable-rotating-davits-main.JPG' },
+      '1900r':{ key:'1900r',title:'Model 1900R',swl:CAPACITIES.MODEL_1900R,link:'https://atkinshoyle.com/1900-rotating-davits-capacity-of-300-lbs.html', type:'davit', mount:'rail', image:'https://atkinshoyle.com/uploads/products/1900-rotating-adjustable-davits-main.jpg' },
 
       // Fixed / Transom / Deck mounted davits
-      '1400f':{ key:'1400f',title:'Model 1400F',swl:CAPACITIES.MODEL_1400F,link:'https://atkinshoyle.com/1400-fixed-davits-capacity-of-250-lbs.html', type:'davit', mount:'fixed' },
-      '1900f':{ key:'1900f',title:'Model 1900F',swl:CAPACITIES.MODEL_1900F,link:'https://atkinshoyle.com/1900-fixed-davits-capacity-of-300-lbs.html', type:'davit', mount:'fixed' },
-      '2000': { key:'2000', title:'Model 2000', swl:CAPACITIES.MODEL_2000, link:'https://atkinshoyle.com/2000-fixed-davits-capacity-of-350-lbs.html', type:'davit', mount:'fixed' },
-      '5000f':{ key:'5000f',title:'Model 5000F',swl:CAPACITIES.MODEL_5000F,link:'https://atkinshoyle.com/5000-fixed-davits-capacity-of-750-lbs.html', type:'davit', mount:'fixed' },
+      '1400f':{ key:'1400f',title:'Model 1400F',swl:CAPACITIES.MODEL_1400F,link:'https://atkinshoyle.com/1400-fixed-davits-capacity-of-250-lbs.html', type:'davit', mount:'fixed', image:'https://atkinshoyle.com/uploads/products/1400-fixed-adjustable-davit-main.JPG' },
+      '1900f':{ key:'1900f',title:'Model 1900F',swl:CAPACITIES.MODEL_1900F,link:'https://atkinshoyle.com/1900-fixed-davits-capacity-of-300-lbs.html', type:'davit', mount:'fixed', image:'https://atkinshoyle.com/uploads/products/1900-fixed-adjustable-davit-9-main.jpg' },
+      '2000': { key:'2000', title:'Model 2000', swl:CAPACITIES.MODEL_2000, link:'https://atkinshoyle.com/2000-fixed-davits-capacity-of-350-lbs.html', type:'davit', mount:'fixed', image:'https://atkinshoyle.com/uploads/products/2000-fixed-adjustable-cast-davit-089507.jpg' },
+      '5000f':{ key:'5000f',title:'Model 5000F',swl:CAPACITIES.MODEL_5000F,link:'https://atkinshoyle.com/5000-fixed-davits-capacity-of-750-lbs.html', type:'davit', mount:'fixed', image:'https://atkinshoyle.com/uploads/products/5000-fixed-adjustable-cast-davits-main.jpg' },
 
       // Cranes (not for sailboats by default)
-      '3000r':{ key:'3000r',title:'Model 3000R',swl:CAPACITIES.MODEL_3000R,link:'https://atkinshoyle.com/3000r-crane-capacity-of-300-lb.html', type:'crane' },
-      '5000r':{ key:'5000r',title:'Model 5000R',swl:CAPACITIES.MODEL_5000R,link:'https://atkinshoyle.com/5000r-crane-capacity-of-750-lb.html', type:'crane' },
-      '6500t':{ key:'6500t',title:'Model 6500T',swl:CAPACITIES.MODEL_6500T,link:'https://atkinshoyle.com/6500t-low-profile-crane-capacity-of-650-lb.html', type:'crane' },
-      '8000t':{ key:'8000t',title:'Model 8000T',swl:CAPACITIES.MODEL_8000T,link:'https://atkinshoyle.com/8000t-low-profile-crane-capcity-of-800-lb.html', type:'crane' }
+      '3000r':{ key:'3000r',title:'Model 3000R',swl:CAPACITIES.MODEL_3000R,link:'https://atkinshoyle.com/3000r-crane-capacity-of-300-lb.html', type:'crane', image:'https://atkinshoyle.com/uploads/products/3000-rotating-crane-721624.jpg' },
+      '5000r':{ key:'5000r',title:'Model 5000R',swl:CAPACITIES.MODEL_5000R,link:'https://atkinshoyle.com/5000r-crane-capacity-of-750-lb.html', type:'crane', image:'https://atkinshoyle.com/uploads/products/5000r-rotating-crane-331027.jpg' },
+      '6500t':{ key:'6500t',title:'Model 6500T',swl:CAPACITIES.MODEL_6500T,link:'https://atkinshoyle.com/6500t-low-profile-crane-capacity-of-650-lb.html', type:'crane', image:'https://atkinshoyle.com/uploads/products/6500t-low-profile-rotating-crane-main-959820.jpg' },
+      '8000t':{ key:'8000t',title:'Model 8000T',swl:CAPACITIES.MODEL_8000T,link:'https://atkinshoyle.com/8000t-low-profile-crane-capcity-of-800-lb.html', type:'crane', image:'https://atkinshoyle.com/uploads/products/8000t-low-profile-rotating-crane-main-156577.jpg' },
+      // Additional models (images extracted from product pages)
+      '3000jr':{ key:'3000jr',title:'Model 3000Jr', swl:300, link:'https://atkinshoyle.com/3000jr-crane-capacity-of-300-lb.html', type:'crane', image:'https://atkinshoyle.com/uploads/products/3000-junior-rotating-crane-243748.jpg' },
+      '1400c':{ key:'1400c',title:'Model 1400 Crane', swl:150, link:'https://atkinshoyle.com/1400-crane-capacity-150-lb.html', type:'crane', image:'https://atkinshoyle.com/uploads/products/1400-rotating-crane-main.jpg' },
+      '1900c':{ key:'1900c',title:'Model 1900 Crane', swl:200, link:'https://atkinshoyle.com/1900-crane-capacity-of-200-lb.html', type:'crane', image:'https://atkinshoyle.com/uploads/products/no-title-74-main.jpg' }
     };
 
     // Model groups
@@ -211,7 +335,7 @@
     const POWER_OPTION_MODELS = new Set(['5000f','5000r','3000r','6500t','8000t']);
      
 
-    function chooseRecommendation({boatLength, weight, mount, dinghyType, engineWeight, winchPref, tenderType, boatType}){
+    function chooseRecommendation({weight, mount, dinghyType, engineWeight, winchPref, tenderType, boatType}){
       const dinghy = Number(weight || 0);
       const engine = Number(engineWeight || 0);
       const totalLift = dinghy + engine; // Total Lift = Dinghy Weight + Outboard Weight
@@ -246,8 +370,8 @@
       }
 
       // POWERBOAT logic
-      // Cranes recommended for arch mounts, hard skiffs, or totalLift > 350
-      const requiresCrane = (mount === 'arch') || (tenderType === 'hardskiff') || (totalLift > 350);
+      // Cranes recommended for hard skiffs or totalLift > 350
+      const requiresCrane = (tenderType === 'hardskiff') || (totalLift > 350);
       if(requiresCrane){
         const crane = findModelByList(CRANE_MODELS);
         if(crane){
@@ -280,11 +404,28 @@
     function formatResult(rec, inputs){
       const modelName = rec.title || 'Recommended Model';
       const rated = rec.swl ? `${rec.swl} lbs (SWL)` : (rec.ratedCapacity || 'Varies');
-      const mountType = rec.mount || rec.mountCompatibility || (rec.type === 'crane' ? 'Deck / Custom' : 'Rail / Transom / Deck');
+      // Prefer the user's selected mount (from inputs); fall back to model compatibility
+      function mountLabel(code){
+        if(!code) return 'Not specified';
+        const map = {swim:'Swim Platform', transom:'Transom', rail:'Rail', deck:'Deck'};
+        return map[code] || String(code).replace(/^[a-z]/, s=>s.toUpperCase());
+      }
+      const mountType = (inputs && inputs.mount) ? mountLabel(inputs.mount) : (rec.mount || rec.mountCompatibility || (rec.type === 'crane' ? 'Deck / Custom' : 'Rail / Transom / Deck'));
 
-      // Recommended model card
+      // Recommended model card with image above the title (uses relative ./images/ paths)
+      const imgUrl = rec.image || '';
+      const features = (typeof KEY_FEATURES !== 'undefined') ? (KEY_FEATURES[rec.key] || []) : [];
+      const featuresHTML = `
+        <h4 style="margin-top:12px;color:var(--navy);font-size:14px">Key Features</h4>
+        <ul class="key-features">
+          ${features.map(f => `<li>${f}</li>`).join('')}
+        </ul>
+      `;
+
       const recommendedCard = `
-        <div style="border:1px solid var(--border);padding:12px;border-radius:8px;background:#fff;margin-bottom:12px">
+        <div class="recommended-card" style="border:1px solid var(--border);padding:12px;border-radius:8px;background:#fff;margin-bottom:12px">
+          <img src="${imgUrl}" alt="${modelName}" class="recommendation-image">
+
           <div style="color:var(--navy);font-weight:700;font-size:12px">RECOMMENDED SOLUTION</div>
           <div style="font-family:'Playfair Display';font-size:24px;color:var(--navy);font-weight:800;margin-top:6px">${modelName}</div>
 
@@ -294,8 +435,7 @@
             <div style="margin-top:6px"><strong>Compatible With:</strong> ${rec.type === 'crane' ? 'Heavy tenders, powered winch options' : 'Inflatables, RIBs, outboards'}</div>
           </div>
 
-          <div style="margin-top:12px;font-weight:600;color:var(--navy)">Why This Model:</div>
-          <div class="product-sub" style="margin-top:6px">${rec.why || ''}</div>
+          ${featuresHTML}
 
           <div style="display:flex;gap:8px;margin-top:12px">
             <a class="primary" href="${rec.link}" target="_blank" style="text-decoration:none;display:inline-block">View Product Page</a>
@@ -303,7 +443,7 @@
             <button id="talkBtn" class="ghost" style="margin-left:8px">Talk to an Expert</button>
           </div>
 
-          <div style="margin-top:10px;color:var(--muted);font-size:13px">Boat: ${inputs.boatLength} ft • Total lift: ${Number(inputs.weight||0) + Number(inputs.engineWeight||0)} lbs</div>
+          <div style="margin-top:10px;color:var(--muted);font-size:13px">Total lift: ${Number(inputs.weight||0) + Number(inputs.engineWeight||0)} lbs</div>
 
           ${rec.addons && rec.addons.length ? `<div style="margin-top:8px;color:var(--navy);font-weight:700">Add-ons</div><div style="color:var(--muted);font-size:13px">${rec.addons.join(', ')}</div>` : ''}
 
@@ -311,37 +451,8 @@
         </div>
       `;
 
-      // helper to render model lists
-      function modelListHtml(keys){
-        return keys.map(k => {
-          const m = catalog[k];
-          if(!m) return '';
-          const isRecommended = rec.key === m.key;
-          return `
-            <div style="border:${isRecommended ? '2px solid var(--navy)' : '1px solid var(--border)'};padding:8px;border-radius:6px;background:#fff;margin-bottom:8px">
-              <div style="font-weight:700;color:var(--navy)">${m.title}${isRecommended? ' — Recommended':''}</div>
-              <div style="color:var(--muted);font-size:13px;margin-top:6px">Capacity: ${m.swl} lbs</div>
-            </div>
-          `;
-        }).join('');
-      }
-
-      const groups = `
-        <div style="margin-top:10px">
-          <div style="font-weight:700;color:var(--navy);margin-bottom:6px">Rail Mount Davits</div>
-          ${modelListHtml(RAIL_MODELS)}
-        </div>
-        <div style="margin-top:10px">
-          <div style="font-weight:700;color:var(--navy);margin-bottom:6px">Fixed / Transom / Deck Davits</div>
-          ${modelListHtml(FIXED_MODELS)}
-        </div>
-        <div style="margin-top:10px">
-          <div style="font-weight:700;color:var(--navy);margin-bottom:6px">Cranes</div>
-          ${modelListHtml(CRANE_MODELS)}
-        </div>
-      `;
-
-      return recommendedCard + groups;
+      // Return only the main recommended card to keep results minimal and focused
+      return recommendedCard;
     }
 
     function engineWeightLabel(code){
@@ -354,14 +465,13 @@
     }
 
     document.getElementById('recommendBtn').addEventListener('click', ()=>{
-      const boatLength = Number(document.getElementById('boatLength').value) || 0;
       const weight = Number(document.getElementById('dinghyWeight').value) || 0;
       const mount = document.querySelector('input[name="mount"]:checked').value;
-      const boatType = document.getElementById('boatType').value;
+      const boatType = document.getElementById('boatType') ? document.getElementById('boatType').value : 'powerboat';
       const tenderType = document.getElementById('tenderType').value;
       const engineWeight = document.getElementById('engineWeight').value;
       const winchPref = document.getElementById('winchPref').value;
-      const inputs = {boatLength, weight, mount, boatType, tenderType, engineWeight, winchPref};
+      const inputs = {weight, mount, boatType, tenderType, engineWeight, winchPref};
       const rec = chooseRecommendation(inputs);
 
       const area = document.getElementById('resultArea');
@@ -376,7 +486,7 @@
       const quoteBtn = document.getElementById('quoteBtn');
       const subject = encodeURIComponent('Quote Request - Davit/Crane Recommendation');
       const body = encodeURIComponent(
-        `Hello Atkins & Hoyle team,%0D%0A%0D%0AI would like a quote for the following:%0D%0A- Boat length: ${boatLength} ft%0D%0A- Dinghy weight: ${weight} lbs%0D%0A- Mounting: ${mount}%0D%0A- Boat type: ${boatType}%0D%0A- Tender type: ${tenderType}%0D%0A- Engine: ${engineWeight}%0D%0A- Winch preference: ${winchPref}%0D%0A%0D%0CRecommended: ${rec.title}%0D%0A${rec.why}%0D%0A%0D%0AYou can view related products here: ${rec.link}%0D%0A%0D%0AThanks,%0D%0A[Your name]`
+        `Hello Atkins & Hoyle team,%0D%0A%0D%0AI would like a quote for the following:%0D%0A- Dinghy weight: ${weight} lbs%0D%0A- Mounting: ${mount}%0D%0A- Boat type: ${boatType}%0D%0A- Tender type: ${tenderType}%0D%0A- Engine: ${engineWeight}%0D%0A- Winch preference: ${winchPref}%0D%0A%0D%0CRecommended: ${rec.title}%0D%0A${rec.why}%0D%0A%0D%0AYou can view related products here: ${rec.link}%0D%0A%0D%0AThanks,%0D%0A[Your name]`
       );
 
       quoteBtn.onclick = ()=>{
@@ -404,8 +514,7 @@
             <div style="margin-bottom:8px"><label for="qboat">Boat Make / Model</label><input id="qboat" name="boat" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px"/></div>
             <div style="margin-bottom:8px"><label for="qloc">Location</label><input id="qloc" name="location" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:4px"/></div>
             <!-- hidden fields with selections -->
-            <input type="hidden" name="boatLength" value="${inputs.boatLength || ''}" />
-            <input type="hidden" name="dinghyWeight" value="${inputs.weight || ''}" />
+              <input type="hidden" name="dinghyWeight" value="${inputs.weight || ''}" />
             <input type="hidden" name="mount" value="${inputs.mount || ''}" />
             <input type="hidden" name="boatType" value="${inputs.boatType || ''}" />
             <input type="hidden" name="tenderType" value="${inputs.tenderType || ''}" />
@@ -447,7 +556,6 @@
     });
 
     document.getElementById('resetBtn').addEventListener('click', ()=>{
-      document.getElementById('boatLength').value = 35;
       document.getElementById('dinghyWeight').value = 300;
       document.querySelector('input[name="mount"][value="swim"]').checked = true;
       document.getElementById('boatType').value = 'powerboat';
@@ -461,4 +569,5 @@
   </script>
 </body>
 </html>
+
 
