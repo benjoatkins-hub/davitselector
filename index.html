@@ -28,11 +28,13 @@
     p.lead{margin:0 0 14px 0;color:var(--muted)}
 
     .form{background:transparent;padding:0}
+    .form-group{margin-bottom:14px;padding:10px 12px}
+    .form-group h4{margin:0 0 6px 0;font-size:14px;font-weight:600}
     label{display:block;font-size:13px;color:var(--navy);margin-bottom:4px}
     .row{display:flex;gap:12px;margin-bottom:12px}
     input[type=number],select{flex:1;padding:10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--navy);outline:none;margin-bottom:8px}
-    .radio-row{display:flex;gap:8px;flex-wrap:wrap}
-    .radio{background:#fff;border:1px solid var(--border);padding:8px 10px;border-radius:6px;color:var(--navy);cursor:pointer}
+    .radio-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+    .radio{background:#fff;border:1px solid var(--border);padding:6px 8px;border-radius:6px;color:var(--navy);cursor:pointer}
     .radio input{margin-right:8px}
 
     .actions{display:flex;gap:12px;align-items:center;margin-top:8px}
@@ -68,8 +70,11 @@
     }
     .recommended-card{display:block}
 
+    .recommendation-summary { margin-top: 20px; }
+
     /* Recommendation CTA buttons (navy rectangular buttons) */
     .recommended-card .cta-row{display:flex;gap:12px;margin-top:12px}
+    .recommended-card .cta-buttons{display:flex;gap:12px;margin-top:20px}
     .recommended-card .cta-button{
       background:#0b2e4f;color:#ffffff;padding:12px 20px;border-radius:6px;text-decoration:none;display:inline-block;font-weight:600;cursor:pointer;border:0;transition:background 150ms ease;border-radius:6px;
     }
@@ -104,6 +109,15 @@
                 <label for="engineWeight">Outboard Engine Weight (lbs)</label>
                 <input id="engineWeight" type="number" min="0" max="2000" value="0" />
               </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <h4>System Type</h4>
+            <div class="radio-row">
+              <label class="radio"><input type="radio" name="systemType" value="davits" checked> Davits</label>
+              <label class="radio"><input type="radio" name="systemType" value="crane"> Crane</label>
+              <label class="radio"><input type="radio" name="systemType" value="unknown"> Don't Know</label>
             </div>
           </div>
 
@@ -217,6 +231,11 @@
       const heavyLiftThreshold = 750;
       const craneOnlyMounts = new Set(['hardtop','foredeck']);
 
+      // read system type (falls back to 'davits' if not present)
+      const systemTypeEl = (typeof document !== 'undefined') ? document.querySelector('input[name="systemType"]:checked') : null;
+      const systemType = systemTypeEl ? systemTypeEl.value : 'davits';
+      const effectiveSystemType = craneOnlyMounts.has(mount) ? 'crane' : systemType;
+
       function computePowerText(modelKey){
         if(winchPref === 'electric' && POWER_OPTION_MODELS.has(modelKey)) return 'Configured with 12V electric winch';
         if(winchPref === 'manual') return 'Manual pulley system operation';
@@ -224,15 +243,15 @@
         return POWER_OPTION_MODELS.has(modelKey) ? 'Power Option Available' : 'Manual pulley system operation';
       }
 
-      // Heavy-lift override
+      // Heavy-lift override (preserve behavior)
       if(totalLift > heavyLiftThreshold){
         if(mount === 'transom' || mount === 'deck'){
           const m = MODELS['5000f'];
-          if(m){ const clone = Object.assign({}, m); clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = clone.capacity - totalLift; return clone; }
+          if(m){ const clone = Object.assign({}, m); clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = Number(clone.capacity) - totalLift; return clone; }
         }
         if(mount === 'hardtop' || mount === 'foredeck'){
           const m = MODELS['8000t'];
-          if(m){ const clone = Object.assign({}, m); clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = clone.capacity - totalLift; return clone; }
+          if(m){ const clone = Object.assign({}, m); clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = Number(clone.capacity) - totalLift; return clone; }
         }
       }
 
@@ -252,21 +271,83 @@
         return true;
       }
 
-      const requiresCrane = (tenderType === 'hardskiff') || (totalLift > 350);
+      // Choose candidate order based on effective system type
+      if(effectiveSystemType === 'crane'){
+        // Special case: swim platform should still allow crane selection
+        if(mount === 'swim'){
+          // Iterate cranes in order and pick first with capacity >= totalLift
+          for(const k of ALL_CRANE_ORDER){
+            const m = MODELS[k];
+            if(!m) continue;
+            if(Number(m.capacity) >= totalLift){
+              const clone = Object.assign({}, m);
+              if(tenderType === 'hardskiff') clone.addons = ['Gunnel Lock'];
+              clone.manualOrPower = computePowerText(clone.key);
+              clone.totalLift = totalLift;
+              clone.safetyMargin = Number(clone.capacity) - totalLift;
+              clone.isFirstFit = true;
+              return clone;
+            }
+          }
+          // If we reach here, no crane meets the required lift (all cranes < required)
+          return { key:'custom', title:'No crane fits your lifting requirements. Please contact our team for a custom solution.', why:'No standard crane meets the required lift for this configuration.', capacity:'Varies', type:'custom', link: pages.contact, totalLift };
+        }
 
-      if(requiresCrane){
         const craneCandidate = firstMatchFromOrder(ALL_CRANE_ORDER, modelMeets);
-        if(craneCandidate){ const clone = Object.assign({}, craneCandidate); if(tenderType === 'hardskiff') clone.addons = ['Gunnel Lock']; clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = Number(clone.capacity) - totalLift; clone.isFirstFit = true; return clone; }
-        const davitCandidate = firstMatchFromOrder(FIXED_ORDER.concat(RAIL_ORDER), modelMeets);
-        if(davitCandidate){ const clone = Object.assign({}, davitCandidate); if(tenderType === 'hardskiff') clone.addons = ['Gunnel Lock']; clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = Number(clone.capacity) - totalLift; clone.isFirstFit = true; return clone; }
+        if(craneCandidate){
+          const clone = Object.assign({}, craneCandidate);
+          if(tenderType === 'hardskiff') clone.addons = ['Gunnel Lock'];
+          clone.manualOrPower = computePowerText(clone.key);
+          clone.totalLift = totalLift;
+          clone.safetyMargin = Number(clone.capacity) - totalLift;
+          clone.isFirstFit = true;
+          return clone;
+        }
+        return { key:'custom', title:'No crane fits your lifting requirements. Please contact our team for a custom solution.', why:'Unable to find a standard crane that meets the required lift for this configuration.', capacity:'Varies', type:'custom', link: pages.contact, totalLift };
+      }
+
+      // If user selected Don't Know -> evaluate both davits and cranes and return smallest adequate model
+      if(effectiveSystemType === 'unknown' || systemType === 'unknown'){
+        const combined = Array.from(new Set([].concat(FIXED_ORDER, RAIL_ORDER, ALL_CRANE_ORDER)));
+        function meetsUnknown(m){
+          if(Number(m.capacity) < totalLift) return false;
+          if(craneOnlyMounts.has(mount)){
+            if(m.type !== 'crane') return false;
+            if(!m.mount || !m.mount.includes(mount)) return false;
+            return true;
+          }
+          // Allow cranes on swim platform (by SWL) even if mount list doesn't include 'swim'
+          if(m.type === 'crane' && mount === 'swim') return true;
+          if(!m.mount || !m.mount.includes(mount)) return false;
+          return true;
+        }
+        const candidate = firstMatchFromOrder(combined, meetsUnknown);
+        if(candidate){ const clone = Object.assign({}, candidate); if(tenderType === 'hardskiff') clone.addons = ['Gunnel Lock']; clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = Number(clone.capacity) - totalLift; clone.isFirstFit = true; return clone; }
         return { key:'custom', title:'No standard model fits your lifting requirements. Please contact our team for a custom solution.', why:'Unable to find a standard model that meets the required lift for this configuration.', capacity:'Varies', type:'custom', link: pages.contact, totalLift };
       }
 
+      // effectiveSystemType === 'davit' (only evaluate davit models)
       const davitCandidate = firstMatchFromOrder(FIXED_ORDER.concat(RAIL_ORDER), modelMeets);
-      if(davitCandidate){ const clone = Object.assign({}, davitCandidate); if(tenderType === 'hardskiff') clone.addons = ['Gunnel Lock']; clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = Number(clone.capacity) - totalLift; clone.isFirstFit = true; return clone; }
+      if(davitCandidate){
+        const clone = Object.assign({}, davitCandidate);
+        if(tenderType === 'hardskiff') clone.addons = ['Gunnel Lock'];
+        clone.manualOrPower = computePowerText(clone.key);
+        clone.totalLift = totalLift;
+        clone.safetyMargin = Number(clone.capacity) - totalLift;
+        clone.isFirstFit = true;
+        return clone;
+      }
 
+      // If no davit found, fall back to cranes (maintain original fallback)
       const craneFallback = firstMatchFromOrder(ALL_CRANE_ORDER, modelMeets);
-      if(craneFallback){ const clone = Object.assign({}, craneFallback); clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = Number(clone.capacity) - totalLift; clone.isFirstFit = true; return clone; }
+      if(craneFallback){
+        const clone = Object.assign({}, craneFallback);
+        clone.manualOrPower = computePowerText(clone.key);
+        clone.totalLift = totalLift;
+        clone.safetyMargin = Number(clone.capacity) - totalLift;
+        clone.isFirstFit = true;
+        return clone;
+      }
 
       return { key:'custom', title:'No standard model fits your lifting requirements. Please contact our team for a custom solution.', why:'Unable to find a standard model that meets the required lift for this configuration.', capacity:'Varies', type:'custom', link: pages.contact, totalLift };
     }
@@ -306,20 +387,6 @@
 
       const recommendedCard = `
         <div class="recommended-card" itemscope itemtype="https://schema.org/Product" style="border:1px solid var(--border);padding:12px;border-radius:8px;background:#fff;margin-bottom:12px">
-          <div class="cta-row">
-            <a id="viewProductBtn" class="cta-button" href="${rec.link}" target="_blank">View Product Page</a>
-            <a id="requestQuoteBtn" class="cta-button" href="https://atkinshoyle.com/contact.html?source=davit-selector&intent=quote" target="_blank" rel="noopener noreferrer">Request a Quote</a>
-            <a id="contactBtn" class="cta-button" href="https://atkinshoyle.com/contact.html?source=davit-selector&intent=contact" target="_blank" rel="noopener noreferrer">Contact Us</a>
-          </div>
-
-          <div style="margin-top:8px;color:var(--muted);font-size:13px">
-            <div style="font-weight:700">Required Lift Capacity: ${requiredLift} lbs</div>
-            <div style="font-weight:800;margin-top:6px">Selected Model Capacity: ${rec.capacity || rec.swl} lbs</div>
-            <div style="margin-top:6px; ${safety>0 ? 'color:green' : 'color:var(--muted)'}">Safety Margin: ${safety} lbs</div>
-            ${explanation}
-          </div>
-
-          <div style="margin-top:8px;color:var(--muted);font-size:12px">✓ Marine-grade construction&nbsp;&nbsp; ✓ Built for harsh marine environments&nbsp;&nbsp; ✓ Backed by manufacturer warranty</div>
 
           <img itemprop="image" src="${imgUrl}" alt="${modelName}" class="recommendation-image">
 
@@ -335,11 +402,26 @@
 
           ${featuresHTML}
 
-          <div style="margin-top:10px;color:var(--muted);font-size:13px">Total lift: ${requiredLift} lbs</div>
+          <div class="cta-buttons">
+            <a id="viewProductBtn" class="cta-button" href="${rec.link}" target="_blank">View Product Page</a>
+            <a id="requestQuoteBtn" class="cta-button" href="https://atkinshoyle.com/contact.html?source=davit-selector&intent=quote" target="_blank" rel="noopener noreferrer">Request a Quote</a>
+            <a id="contactBtn" class="cta-button" href="https://atkinshoyle.com/contact.html?source=davit-selector&intent=contact" target="_blank" rel="noopener noreferrer">Contact Us</a>
+          </div>
 
           ${rec.addons && rec.addons.length ? `<div style="margin-top:8px;color:var(--navy);font-weight:700">Add-ons</div><div style="color:var(--muted);font-size:13px">${rec.addons.join(', ')}</div>` : ''}
 
           <div style="margin-top:8px;color:var(--muted);font-size:13px">${rec.manualOrPower || ''}</div>
+
+          <div class="recommendation-summary">
+            <div style="margin-top:8px;color:var(--muted);font-size:13px">
+              <div style="font-weight:700">Required Lift Capacity: ${requiredLift} lbs</div>
+              <div style="font-weight:800;margin-top:6px">Selected Model Capacity: ${rec.capacity || rec.swl} lbs</div>
+              <div style="margin-top:6px; ${safety>0 ? 'color:green' : 'color:var(--muted)'}">Safety Margin: ${safety} lbs</div>
+              ${explanation}
+            </div>
+
+            <div style="margin-top:8px;color:var(--muted);font-size:12px">✓ Marine-grade construction&nbsp;&nbsp; ✓ Built for harsh marine environments&nbsp;&nbsp; ✓ Backed by manufacturer warranty</div>
+          </div>
         </div>
       `;
 
