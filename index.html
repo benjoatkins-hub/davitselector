@@ -208,7 +208,7 @@
       '2000':{ key:'2000', title:'Model 2000', capacity:350, type:'davit', mount:['transom','deck','swim'], link:'https://atkinshoyle.com/2000-fixed-davits-capacity-of-350-lbs.html', image:'https://atkinshoyle.com/uploads/products/2000-fixed-adjustable-cast-davit-089507.jpg', features:['350 lb rated fixed davit — high capacity, low weight','Sand-cast AlMag alloy construction for strength','Versatile mounting: deck, transom, swim platform','Optional riser arms for extended reach','Includes hardware and pre-rigged lifting line'] },
       '5000f':{ key:'5000f', title:'Model 5000F', capacity:750, type:'davit', mount:['transom','deck'], link:'https://atkinshoyle.com/5000-fixed-davits-capacity-of-750-lbs.html', image:'https://atkinshoyle.com/uploads/products/5000-fixed-adjustable-cast-davits-main.jpg', features:['Up to 750 lb lifting capacity for large tenders','Adjustable spline for precise boom angle','Heavy-duty cast construction and hardware','Optional electric winch compatibility','Complete installation kit included'] },
       '3000r':{ key:'3000r', title:'Model 3000R', capacity:300, type:'crane', mount:['deck','transom','hardtop'], link:'https://atkinshoyle.com/3000r-crane-capacity-of-300-lb.html', image:'https://atkinshoyle.com/uploads/products/3000-rotating-crane-721624.jpg', features:['300 lb rotating crane with wide reach','360° rotation and robust mounting options','Smooth manual winch with optional electric upgrade','Designed for deck, transom or hardtop installation','Supplied as a ready-to-install kit'] },
-      '5000r':{ key:'5000r', title:'Model 5000R', capacity:750, type:'crane', mount:['deck','transom','hardtop'], link:'https://atkinshoyle.com/5000r-crane-capacity-of-750-lb.html', image:'https://atkinshoyle.com/uploads/products/5000r-rotating-crane-331027.jpg', features:['500 lb rotating crane for heavy lifting','Strong, corrosion-resistant components','Optional power winch for effortless operation','Collapsible design for easy storage','Ideal for larger tenders and gear'] },
+      '5000r':{ key:'5000r', title:'Model 5000R', capacity:500, type:'crane', mount:['deck','transom','hardtop'], link:'https://atkinshoyle.com/5000r-crane-capacity-of-500-lb.html', image:'https://atkinshoyle.com/uploads/products/5000r-rotating-crane-331027.jpg', features:['500 lb rotating crane for heavy lifting','Strong, corrosion-resistant components','Optional power winch for effortless operation','Collapsible design for easy storage','Ideal for larger tenders and gear'] },
       '6500t':{ key:'6500t', title:'Model 6500T', capacity:650, type:'crane', mount:['deck','hardtop'], link:'https://atkinshoyle.com/6500t-low-profile-crane-capacity-of-650-lb.html', image:'https://atkinshoyle.com/uploads/products/6500t-low-profile-rotating-crane-main-959820.jpg', features:['650 lb low-profile crane with high capacity','Horizontal folding boom for compact storage','Optional electric winch and remote control','Robust installation kit included','Engineered for frequent heavy use'] },
       '8000t':{ key:'8000t', title:'Model 8000T', capacity:800, type:'crane', mount:['deck','hardtop','foredeck'], link:'https://atkinshoyle.com/8000t-low-profile-crane-capcity-of-800-lb.html', image:'https://atkinshoyle.com/uploads/products/8000t-low-profile-rotating-crane-main-156577.jpg', features:['Exceptional 800 lb lifting capacity','Low-profile horizontal folding boom','Optional telescoping boom for added reach','12V electric winch operation available','Full installation kit and hardware included'] },
       '3000jr':{ key:'3000jr', title:'Model 3000Jr', capacity:300, type:'crane', mount:['deck','rail','transom'], link:'https://atkinshoyle.com/3000jr-crane-capacity-of-300-lb.html', image:'https://atkinshoyle.com/uploads/products/3000-junior-rotating-crane-243748.jpg', features:['Compact 300 lb junior crane for limited spaces','Lightweight yet durable construction','Easy-to-remove head for storage','Smooth manual winch with optional electric upgrade','Versatile mount options for decks and rails'] },
@@ -358,7 +358,7 @@
     // ===== RENDERING =====
     function formatResult(rec, inputs){
       const modelName = rec.title || 'Recommended Model';
-      const rated = rec.capacity ? `${rec.capacity} lbs (SWL)` : (rec.ratedCapacity || 'Varies');
+      const rated = rec.capacity ? `${rec.capacity} lbs (Safe Working Load)` : (rec.ratedCapacity || 'Varies');
       function mountLabel(code){ if(!code) return 'Not specified'; const map = {swim:'Swim Platform', transom:'Transom', rail:'Rail', deck:'Deck', hardtop:'Hardtop', foredeck:'Foredeck'}; return map[code] || String(code).replace(/^[a-z]/, s=>s.toUpperCase()); }
       const mountType = (inputs && inputs.mount) ? mountLabel(inputs.mount) : (rec.mount || (rec.type === 'crane' ? 'Deck / Custom' : 'Rail / Transom / Deck'));
       const imgUrl = rec.image || '';
@@ -430,6 +430,64 @@
 
     window.formatResult = formatResult;
 
+    // Find other suitable models (up to `limit`) that meet the same inputs and filters
+    function findOtherModels(inputs, excludeKey, limit = 4){
+      const dinghy = Number(inputs.weight || 0);
+      const engine = Number(inputs.engineWeight || 0);
+      const totalLift = dinghy + engine;
+      const mount = inputs.mount;
+      const tenderType = inputs.tenderType;
+      const winchPref = inputs.winchPref;
+      const heavyLiftThreshold = 750;
+      const craneOnlyMounts = new Set(['hardtop','foredeck']);
+
+      // determine system type like chooseRecommendation (but don't alter primary logic)
+      const systemTypeEl = (typeof document !== 'undefined') ? document.querySelector('input[name="systemType"]:checked') : null;
+      const systemType = systemTypeEl ? systemTypeEl.value : 'davits';
+      const effectiveSystemType = craneOnlyMounts.has(mount) ? 'crane' : systemType;
+
+      const combined = Array.from(new Set([].concat(FIXED_ORDER, RAIL_ORDER, ALL_CRANE_ORDER)));
+      const results = [];
+
+      function allowedByMount(m){
+        if(Number(m.capacity) < totalLift) return false;
+        if(craneOnlyMounts.has(mount)){
+          if(m.type !== 'crane') return false;
+          if(!m.mount || !m.mount.includes(mount)) return false;
+          return true;
+        }
+        // allow cranes on swim platform by SWL
+        if(m.type === 'crane' && mount === 'swim') return true;
+        if(!m.mount || !m.mount.includes(mount)) return false;
+        return true;
+      }
+
+      for(const k of combined){
+        const m = MODELS[k];
+        if(!m) continue;
+        if(m.key === excludeKey) continue;
+        if(!allowedByMount(m)) continue;
+        // respect user's system selection
+        if(effectiveSystemType === 'crane' && m.type !== 'crane') continue;
+        if(effectiveSystemType === 'davits' && m.type !== 'davit') continue;
+
+        const clone = Object.assign({}, m);
+        clone.manualOrPower = (function(modelKey){
+          if(winchPref === 'electric' && POWER_OPTION_MODELS.has(modelKey)) return 'Configured with 12V electric winch';
+          if(winchPref === 'manual') return 'Manual pulley system operation';
+          if(winchPref === 'unsure' || winchPref === 'not sure') return 'Available in manual or electric configurations';
+          return POWER_OPTION_MODELS.has(modelKey) ? 'Power Option Available' : 'Manual pulley system operation';
+        })(clone.key);
+        clone.totalLift = totalLift;
+        clone.safetyMargin = Number(clone.capacity) - totalLift;
+
+        results.push(clone);
+        if(results.length >= limit) break;
+      }
+
+      return results;
+    }
+
     // ===== EVENT HANDLERS =====
     document.getElementById('recommendBtn').addEventListener('click', ()=>{
       const weight = Number(document.getElementById('dinghyWeight').value) || 0;
@@ -447,6 +505,84 @@
 
       const quoteArea = document.getElementById('quoteArea');
       quoteArea.style.display = 'block';
+
+      // Remove existing other-options UI if present
+      const prevBtn = document.getElementById('otherOptionsBtn');
+      if(prevBtn) prevBtn.remove();
+      const prevWrap = document.getElementById('otherOptionsWrap');
+      if(prevWrap) prevWrap.remove();
+
+      // Create toggle button below the recommendation card
+      const btn = document.createElement('button');
+      btn.id = 'otherOptionsBtn';
+      btn.type = 'button';
+      btn.className = 'cta-button';
+      btn.style.marginTop = '8px';
+      btn.textContent = 'View Other Suitable Options';
+
+      // Container for other options
+      const wrap = document.createElement('div');
+      wrap.id = 'otherOptionsWrap';
+      wrap.style.display = 'none';
+      wrap.style.marginTop = '12px';
+
+      // Toggle handler
+      btn.addEventListener('click', ()=>{
+        if(wrap.style.display === 'none'){
+          // populate
+          wrap.innerHTML = '';
+          const others = findOtherModels(inputs, rec.key, 4);
+          if(!others || others.length === 0){
+            wrap.innerHTML = '<div style="color:var(--muted);font-size:13px">No additional standard models match your requirements.</div>';
+          } else {
+            const list = document.createElement('div');
+            list.style.display = 'grid';
+            list.style.gridTemplateColumns = '1fr';
+            list.style.gap = '10px';
+            others.forEach(m => {
+              const item = document.createElement('div');
+              item.style.border = '1px solid var(--border)';
+              item.style.padding = '10px';
+              item.style.borderRadius = '6px';
+              item.style.background = '#fff';
+
+              const title = document.createElement('div');
+              title.style.fontWeight = '700';
+              title.style.color = 'var(--navy)';
+              title.textContent = m.title || m.key;
+
+              const cap = document.createElement('div');
+              cap.style.fontSize = '13px';
+              cap.style.color = 'var(--muted)';
+              cap.style.marginTop = '6px';
+              cap.textContent = `Rated Capacity: ${m.capacity} lbs (Safe Working Load)`;
+
+              const link = document.createElement('a');
+              link.className = 'cta-button';
+              link.href = m.link || pages.contact;
+              link.target = '_blank';
+              link.style.marginTop = '8px';
+              link.textContent = 'View Product Page';
+
+              item.appendChild(title);
+              item.appendChild(cap);
+              item.appendChild(link);
+              list.appendChild(item);
+            });
+            wrap.appendChild(list);
+          }
+          wrap.style.display = 'block';
+          btn.textContent = 'Hide Other Suitable Options';
+        } else {
+          wrap.style.display = 'none';
+          btn.textContent = 'View Other Suitable Options';
+        }
+      });
+
+      // Insert button and wrap after the result area content
+      const parent = area;
+      parent.appendChild(btn);
+      parent.appendChild(wrap);
     });
 
     document.getElementById('resetBtn').addEventListener('click', ()=>{
