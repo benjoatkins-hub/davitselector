@@ -178,10 +178,205 @@
     </footer>
   </div>
 
-  <script src="./models.js"></script>
-  <script src="./rules.js"></script>
-  <script src="./render.js"></script>
-  <script src="./main.js"></script>
+</script>
+  <script>
+    // ===== main.js (inlined) =====
+    // Single-file JavaScript: product catalog, recommendation rules, rendering, and event handlers
+
+    // ===== PRODUCT CATALOG =====
+    const MODELS = {
+      '120': { key: '120', title: 'Model 120', capacity: 120, type: 'davit', mount: ['rail'], link: 'https://atkinshoyle.com/120-outboard-lift-capacity-of-120-lb.html', image: 'https://atkinshoyle.com/uploads/products/120-motor-lift-main.JPG', features: ['Lifts up to 120 lbs (54 kg)','Compact, lightweight design for easy handling','Rail and transom mounting options','Smooth rotation on low-friction sleeves','Includes mounting hardware and pre-rigged line'] },
+      '1200r':{ key:'1200r', title:'Model 1200R', capacity:200, type:'davit', mount:['rail'], link:'https://atkinshoyle.com/1200-rotating-davits-capacity-of-200-lbs.html', image:'https://atkinshoyle.com/uploads/products/1200-rotating-davit-main.jpg', features:['200 lb rated rotating davit','Compact removable arm for neat storage','Adjustable standpipe height for reach','Smooth, low-maintenance rotation','Pre-rigged with quality line and blocks'] },
+      '1400r':{ key:'1400r', title:'Model 1400R', capacity:250, type:'davit', mount:['rail'], link:'https://atkinshoyle.com/1400-rotating-davits-capacity-of-250-lbs.html', image:'https://atkinshoyle.com/uploads/products/1400-adjustable-rotating-davits-main.JPG', features:['250 lb rotating davit for larger inflatables','Adjustable angle and reach for versatile mounting','Robust cast components for longevity','Simple removal for winter storage','Complete kit with hardware and block-and-tackle'] },
+      '1900r':{ key:'1900r', title:'Model 1900R', capacity:300, type:'davit', mount:['rail'], link:'https://atkinshoyle.com/1900-rotating-davits-capacity-of-300-lbs.html', image:'https://atkinshoyle.com/uploads/products/1900-rotating-adjustable-davits-main.jpg', features:['300 lb capacity with adjustable angle','Heavy-duty materials for marine environments','Smooth 360° rotation and locking collar','Ideal for 11’ RIBs and larger tenders','Supplied pre-rigged and ready to install'] },
+      '1400f':{ key:'1400f', title:'Model 1400F', capacity:250, type:'davit', mount:['transom','deck','swim'], link:'https://atkinshoyle.com/1400-fixed-davits-capacity-of-250-lbs.html', image:'https://atkinshoyle.com/uploads/products/1400-fixed-adjustable-davit-main.JPG', features:['250 lb fixed davit for secure transom mounting','Adjustable base casting for custom angle','Compact, corrosion-resistant construction','Works well with small RIBs and outboards','Includes all mounting hardware'] },
+      '1900f':{ key:'1900f', title:'Model 1900F', capacity:300, type:'davit', mount:['transom','deck','swim'], link:'https://atkinshoyle.com/1900-fixed-davits-capacity-of-300-lbs.html', image:'https://atkinshoyle.com/uploads/products/1900-fixed-adjustable-davit-9-main.jpg', features:['300 lb fixed davit for heavy-duty use','Adjustable angle for optimized reach','Solid cast components for long service life','Recommended for larger inflatables and motors','Complete kit with block-and-tackle'] },
+      '2000':{ key:'2000', title:'Model 2000', capacity:350, type:'davit', mount:['transom','deck','swim'], link:'https://atkinshoyle.com/2000-fixed-davits-capacity-of-350-lbs.html', image:'https://atkinshoyle.com/uploads/products/2000-fixed-adjustable-cast-davit-089507.jpg', features:['350 lb rated fixed davit — high capacity, low weight','Sand-cast AlMag alloy construction for strength','Versatile mounting: deck, transom, swim platform','Optional riser arms for extended reach','Includes hardware and pre-rigged lifting line'] },
+      '5000f':{ key:'5000f', title:'Model 5000F', capacity:750, type:'davit', mount:['transom','deck'], link:'https://atkinshoyle.com/5000-fixed-davits-capacity-of-750-lbs.html', image:'https://atkinshoyle.com/uploads/products/5000-fixed-adjustable-cast-davits-main.jpg', features:['Up to 750 lb lifting capacity for large tenders','Adjustable spline for precise boom angle','Heavy-duty cast construction and hardware','Optional electric winch compatibility','Complete installation kit included'] },
+      '3000r':{ key:'3000r', title:'Model 3000R', capacity:300, type:'crane', mount:['deck','transom','hardtop'], link:'https://atkinshoyle.com/3000r-crane-capacity-of-300-lb.html', image:'https://atkinshoyle.com/uploads/products/3000-rotating-crane-721624.jpg', features:['300 lb rotating crane with wide reach','360° rotation and robust mounting options','Smooth manual winch with optional electric upgrade','Designed for deck, transom or hardtop installation','Supplied as a ready-to-install kit'] },
+      '5000r':{ key:'5000r', title:'Model 5000R', capacity:750, type:'crane', mount:['deck','transom','hardtop'], link:'https://atkinshoyle.com/5000r-crane-capacity-of-750-lb.html', image:'https://atkinshoyle.com/uploads/products/5000r-rotating-crane-331027.jpg', features:['500 lb rotating crane for heavy lifting','Strong, corrosion-resistant components','Optional power winch for effortless operation','Collapsible design for easy storage','Ideal for larger tenders and gear'] },
+      '6500t':{ key:'6500t', title:'Model 6500T', capacity:650, type:'crane', mount:['deck','hardtop'], link:'https://atkinshoyle.com/6500t-low-profile-crane-capacity-of-650-lb.html', image:'https://atkinshoyle.com/uploads/products/6500t-low-profile-rotating-crane-main-959820.jpg', features:['650 lb low-profile crane with high capacity','Horizontal folding boom for compact storage','Optional electric winch and remote control','Robust installation kit included','Engineered for frequent heavy use'] },
+      '8000t':{ key:'8000t', title:'Model 8000T', capacity:800, type:'crane', mount:['deck','hardtop','foredeck'], link:'https://atkinshoyle.com/8000t-low-profile-crane-capcity-of-800-lb.html', image:'https://atkinshoyle.com/uploads/products/8000t-low-profile-rotating-crane-main-156577.jpg', features:['Exceptional 800 lb lifting capacity','Low-profile horizontal folding boom','Optional telescoping boom for added reach','12V electric winch operation available','Full installation kit and hardware included'] },
+      '3000jr':{ key:'3000jr', title:'Model 3000Jr', capacity:300, type:'crane', mount:['deck','rail','transom'], link:'https://atkinshoyle.com/3000jr-crane-capacity-of-300-lb.html', image:'https://atkinshoyle.com/uploads/products/3000-junior-rotating-crane-243748.jpg', features:['Compact 300 lb junior crane for limited spaces','Lightweight yet durable construction','Easy-to-remove head for storage','Smooth manual winch with optional electric upgrade','Versatile mount options for decks and rails'] },
+      '1400c':{ key:'1400c', title:'Model 1400 Crane', capacity:150, type:'crane', mount:['deck','rail','transom'], link:'https://atkinshoyle.com/1400-crane-capacity-150-lb.html', image:'https://atkinshoyle.com/uploads/products/1400-rotating-crane-main.jpg', features:['150 lb rotating crane — compact and nimble','Ideal for small outboards and accessories','Simple installation and low maintenance','Smooth rotation and secure locking','Pre-rigged kit for quick setup'] },
+      '1900c':{ key:'1900c', title:'Model 1900 Crane', capacity:200, type:'crane', mount:['deck','rail','transom'], link:'https://atkinshoyle.com/1900-crane-capacity-of-200-lb.html', image:'https://atkinshoyle.com/uploads/products/no-title-74-main.jpg', features:['200 lb rotating crane with robust build','Adjustable arm angle for reach control','Durable components suited to marine use','Good balance of capacity and compactness','Supplied as a ready-to-install kit'] }
+    };
+
+    const RAIL_ORDER = ['120','1200r','1400r','1900r'];
+    const FIXED_ORDER = ['1400f','1900f','2000','5000f'];
+    const CRANE_ORDER = ['3000r','5000r','6500t','8000t'];
+    const ALL_CRANE_ORDER = ['1400c','1900c','3000jr','3000r','5000r','6500t','8000t'];
+    const POWER_OPTION_MODELS = new Set(['5000f','5000r','3000r','6500t','8000t']);
+    window.pages = window.pages || { contact: 'https://atkinshoyle.com/contact.html' };
+
+    // ===== RECOMMENDATION ENGINE =====
+    function chooseRecommendation({weight, mount, engineWeight, winchPref, tenderType}){
+      const dinghy = Number(weight || 0);
+      const engine = Number(engineWeight || 0);
+      const totalLift = dinghy + engine;
+      const heavyLiftThreshold = 750;
+      const craneOnlyMounts = new Set(['hardtop','foredeck']);
+
+      function computePowerText(modelKey){
+        if(winchPref === 'electric' && POWER_OPTION_MODELS.has(modelKey)) return 'Configured with 12V electric winch';
+        if(winchPref === 'manual') return 'Manual pulley system operation';
+        if(winchPref === 'unsure' || winchPref === 'not sure') return 'Available in manual or electric configurations';
+        return POWER_OPTION_MODELS.has(modelKey) ? 'Power Option Available' : 'Manual pulley system operation';
+      }
+
+      // Heavy-lift override
+      if(totalLift > heavyLiftThreshold){
+        if(mount === 'transom' || mount === 'deck'){
+          const m = MODELS['5000f'];
+          if(m){ const clone = Object.assign({}, m); clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = clone.capacity - totalLift; return clone; }
+        }
+        if(mount === 'hardtop' || mount === 'foredeck'){
+          const m = MODELS['8000t'];
+          if(m){ const clone = Object.assign({}, m); clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = clone.capacity - totalLift; return clone; }
+        }
+      }
+
+      function firstMatchFromOrder(orderArray, predicate){
+        for(const k of orderArray){ const m = MODELS[k]; if(!m) continue; if(predicate(m)) return m; }
+        return null;
+      }
+
+      function modelMeets(m){
+        if(Number(m.capacity) < totalLift) return false;
+        if(craneOnlyMounts.has(mount)){
+          if(m.type !== 'crane') return false;
+          if(!m.mount || !m.mount.includes(mount)) return false;
+          return true;
+        }
+        if(!m.mount || !m.mount.includes(mount)) return false;
+        return true;
+      }
+
+      const requiresCrane = (tenderType === 'hardskiff') || (totalLift > 350);
+
+      if(requiresCrane){
+        const craneCandidate = firstMatchFromOrder(ALL_CRANE_ORDER, modelMeets);
+        if(craneCandidate){ const clone = Object.assign({}, craneCandidate); if(tenderType === 'hardskiff') clone.addons = ['Gunnel Lock']; clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = Number(clone.capacity) - totalLift; clone.isFirstFit = true; return clone; }
+        const davitCandidate = firstMatchFromOrder(FIXED_ORDER.concat(RAIL_ORDER), modelMeets);
+        if(davitCandidate){ const clone = Object.assign({}, davitCandidate); if(tenderType === 'hardskiff') clone.addons = ['Gunnel Lock']; clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = Number(clone.capacity) - totalLift; clone.isFirstFit = true; return clone; }
+        return { key:'custom', title:'No standard model fits your lifting requirements. Please contact our team for a custom solution.', why:'Unable to find a standard model that meets the required lift for this configuration.', capacity:'Varies', type:'custom', link: pages.contact, totalLift };
+      }
+
+      const davitCandidate = firstMatchFromOrder(FIXED_ORDER.concat(RAIL_ORDER), modelMeets);
+      if(davitCandidate){ const clone = Object.assign({}, davitCandidate); if(tenderType === 'hardskiff') clone.addons = ['Gunnel Lock']; clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = Number(clone.capacity) - totalLift; clone.isFirstFit = true; return clone; }
+
+      const craneFallback = firstMatchFromOrder(ALL_CRANE_ORDER, modelMeets);
+      if(craneFallback){ const clone = Object.assign({}, craneFallback); clone.manualOrPower = computePowerText(clone.key); clone.totalLift = totalLift; clone.safetyMargin = Number(clone.capacity) - totalLift; clone.isFirstFit = true; return clone; }
+
+      return { key:'custom', title:'No standard model fits your lifting requirements. Please contact our team for a custom solution.', why:'Unable to find a standard model that meets the required lift for this configuration.', capacity:'Varies', type:'custom', link: pages.contact, totalLift };
+    }
+
+    // Expose for debugging
+    window.chooseRecommendation = chooseRecommendation;
+
+    // ===== RENDERING =====
+    function formatResult(rec, inputs){
+      const modelName = rec.title || 'Recommended Model';
+      const rated = rec.capacity ? `${rec.capacity} lbs (SWL)` : (rec.ratedCapacity || 'Varies');
+      function mountLabel(code){ if(!code) return 'Not specified'; const map = {swim:'Swim Platform', transom:'Transom', rail:'Rail', deck:'Deck', hardtop:'Hardtop', foredeck:'Foredeck'}; return map[code] || String(code).replace(/^[a-z]/, s=>s.toUpperCase()); }
+      const mountType = (inputs && inputs.mount) ? mountLabel(inputs.mount) : (rec.mount || (rec.type === 'crane' ? 'Deck / Custom' : 'Rail / Transom / Deck'));
+      const imgUrl = rec.image || '';
+      const features = rec.features || (MODELS[rec.key] ? MODELS[rec.key].features : []);
+      const featuresHTML = `
+        <div itemprop="description">
+          <h4 style="margin-top:12px;color:var(--navy);font-size:14px">Key Features</h4>
+          <ul class="key-features">
+            ${features.map(f => `<li>${f}</li>`).join('')}
+          </ul>
+        </div>
+      `;
+      const bestFor = [];
+      if(inputs && inputs.tenderType){ const mapTender = {inflatable:'Inflatable tenders', rib:'RIBs', hardskiff:'Hard skiffs'}; const tenderLabel = mapTender[inputs.tenderType] || String(inputs.tenderType); bestFor.push(`${tenderLabel} — up to ${rec.capacity || rec.swl || 'Varies'} lbs`); }
+      if(inputs && inputs.mount){ const mountLabelShort = mountLabel(inputs.mount); bestFor.push(`${mountLabelShort} mounting applications`); }
+      if(inputs && inputs.winchPref === 'electric'){ bestFor.push('Electric lift setup'); }
+      const bestForHTML = bestFor.length ? `
+        <h4 style="margin-top:12px;color:var(--navy);font-size:14px">Best For:</h4>
+        <ul style="padding-left:18px;margin-top:6px;color:var(--muted);font-size:13px">
+          ${bestFor.map(b => `<li>${b}</li>`).join('')}
+        </ul>
+      ` : '';
+      const safety = (typeof rec.safetyMargin !== 'undefined' && rec.safetyMargin !== null) ? rec.safetyMargin : (Number(rec.capacity||0) - (Number(inputs.weight||0) + Number(inputs.engineWeight||0)));
+      const requiredLift = rec.totalLift || (Number(inputs.weight||0) + Number(inputs.engineWeight||0));
+      const explanation = rec.isFirstFit ? `<div style="margin-top:8px;color:var(--muted);font-size:13px">This model is recommended because your required lift of ${requiredLift} lbs exceeds the capacity of smaller models.</div>` : '';
+
+      const recommendedCard = `
+        <div class="recommended-card" itemscope itemtype="https://schema.org/Product" style="border:1px solid var(--border);padding:12px;border-radius:8px;background:#fff;margin-bottom:12px">
+          <div class="cta-row">
+            <a id="viewProductBtn" class="cta-button" href="${rec.link}" target="_blank">View Product Page</a>
+            <a id="requestQuoteBtn" class="cta-button" href="https://atkinshoyle.com/contact.html?source=davit-selector&intent=quote" target="_blank" rel="noopener noreferrer">Request a Quote</a>
+            <a id="contactBtn" class="cta-button" href="https://atkinshoyle.com/contact.html?source=davit-selector&intent=contact" target="_blank" rel="noopener noreferrer">Contact Us</a>
+          </div>
+
+          <div style="margin-top:8px;color:var(--muted);font-size:13px">
+            <div style="font-weight:700">Required Lift Capacity: ${requiredLift} lbs</div>
+            <div style="font-weight:800;margin-top:6px">Selected Model Capacity: ${rec.capacity || rec.swl} lbs</div>
+            <div style="margin-top:6px; ${safety>0 ? 'color:green' : 'color:var(--muted)'}">Safety Margin: ${safety} lbs</div>
+            ${explanation}
+          </div>
+
+          <div style="margin-top:8px;color:var(--muted);font-size:12px">✓ Marine-grade construction&nbsp;&nbsp; ✓ Built for harsh marine environments&nbsp;&nbsp; ✓ Backed by manufacturer warranty</div>
+
+          <img itemprop="image" src="${imgUrl}" alt="${modelName}" class="recommendation-image">
+
+          <div style="color:var(--navy);font-weight:700;font-size:12px">RECOMMENDED SOLUTION</div>
+          <div itemprop="name" style="font-family:'Playfair Display';font-size:24px;color:var(--navy);font-weight:800;margin-top:6px">${modelName}</div>
+
+          <div style="margin-top:10px;color:var(--muted);font-size:14px">
+            <div><strong>Rated Capacity:</strong> ${rated}</div>
+            <div style="margin-top:6px"><strong>Ideal Mounting:</strong> ${mountType}</div>
+          </div>
+
+          ${bestForHTML}
+
+          ${featuresHTML}
+
+          <div style="margin-top:10px;color:var(--muted);font-size:13px">Total lift: ${requiredLift} lbs</div>
+
+          ${rec.addons && rec.addons.length ? `<div style="margin-top:8px;color:var(--navy);font-weight:700">Add-ons</div><div style="color:var(--muted);font-size:13px">${rec.addons.join(', ')}</div>` : ''}
+
+          <div style="margin-top:8px;color:var(--muted);font-size:13px">${rec.manualOrPower || ''}</div>
+        </div>
+      `;
+
+      return recommendedCard;
+    }
+
+    window.formatResult = formatResult;
+
+    // ===== EVENT HANDLERS =====
+    document.getElementById('recommendBtn').addEventListener('click', ()=>{
+      const weight = Number(document.getElementById('dinghyWeight').value) || 0;
+      const mount = document.querySelector('input[name="mount"]:checked').value;
+      const tenderType = document.getElementById('tenderType').value;
+      const engineWeight = document.getElementById('engineWeight').value || 0;
+      const winchPref = document.getElementById('winchPref').value;
+      const inputs = {weight, mount, tenderType, engineWeight, winchPref};
+      const rec = chooseRecommendation(inputs);
+
+      const area = document.getElementById('resultArea');
+      area.innerHTML = formatResult(rec, inputs);
+      window._lastInputs = inputs;
+      window._lastRec = rec;
+
+      const quoteArea = document.getElementById('quoteArea');
+      quoteArea.style.display = 'block';
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', ()=>{
+      document.getElementById('dinghyWeight').value = 300;
+      document.querySelector('input[name="mount"][value="swim"]').checked = true;
+      document.getElementById('tenderType').value = 'inflatable';
+      document.getElementById('engineWeight').value = '0';
+      document.getElementById('winchPref').value = 'unsure';
+      document.getElementById('resultArea').innerHTML = `<div class="product-title">No selection yet</div><div class="product-sub">Fill the form and click <strong>Get Recommendation</strong> to see the best fit for your boat.</div>`;
+      document.getElementById('quoteArea').style.display = 'none';
+    });
+  </script>
 </body>
 </html>
 
