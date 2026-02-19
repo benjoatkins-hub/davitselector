@@ -340,6 +340,14 @@
       const engine = Number(engineWeight || 0);
       const totalLift = dinghy + engine; // Total Lift = Dinghy Weight + Outboard Weight
 
+      // helper to produce power text based on user preference and model capability
+      function computePowerText(modelKey){
+        if(winchPref === 'electric' && POWER_OPTION_MODELS.has(modelKey)) return 'Configured with 12V electric winch';
+        if(winchPref === 'manual') return 'Manual pulley system operation';
+        if(winchPref === 'not sure') return 'Available in manual or electric configurations';
+        return POWER_OPTION_MODELS.has(modelKey) ? 'Power Option Available' : 'Manual pulley system operation';
+      }
+
       // Helper: find first model in list with swl >= needed
       function findModelByList(list){
         for(const k of list){
@@ -359,12 +367,15 @@
         if(davit){
           // Hard skiff accessory
           if(tenderType === 'hardskiff') davit.addons = ['Gunnel Lock'];
-          davit.manualOrPower = POWER_OPTION_MODELS.has(davit.key) ? 'Power Option Available' : 'Manual pulley system operation';
+          davit.manualOrPower = computePowerText(davit.key);
+          davit.totalLift = totalLift;
+          davit.safetyMargin = Number(davit.swl) - totalLift;
+          davit.isFirstFit = true;
           return davit;
         }
         // if no davit fits, try cranes (allowed only when exceeds davit capacity)
         const crane = findModelByList(CRANE_MODELS);
-        if(crane){ crane.manualOrPower = POWER_OPTION_MODELS.has(crane.key) ? 'Power Option Available' : 'Manual pulley system operation'; return crane; }
+        if(crane){ crane.manualOrPower = computePowerText(crane.key); crane.totalLift = totalLift; crane.safetyMargin = Number(crane.swl) - totalLift; crane.isFirstFit = true; return crane; }
         // fallback to custom engineered solution
         return {key:'custom', title:'Custom engineered solution required. Contact Atkins & Hoyle.', why:'Total lift exceeds available standard davit and crane capacities. Please contact our engineering team for a tailored solution.', swl:'Varies', type:'custom', link:pages.contact};
       }
@@ -376,29 +387,35 @@
         const crane = findModelByList(CRANE_MODELS);
         if(crane){
           if(tenderType === 'hardskiff') crane.addons = ['Gunnel Lock'];
-          crane.manualOrPower = POWER_OPTION_MODELS.has(crane.key) ? 'Power Option Available' : 'Manual pulley system operation';
+          crane.manualOrPower = computePowerText(crane.key);
+          crane.totalLift = totalLift;
+          crane.safetyMargin = Number(crane.swl) - totalLift;
+          crane.isFirstFit = true;
           return crane;
         }
         // if crane not sufficient, fallback to highest davit or custom
         const davit = findModelByList(davitList);
-        if(davit){ davit.manualOrPower = POWER_OPTION_MODELS.has(davit.key) ? 'Power Option Available' : 'Manual pulley system operation'; return davit; }
-        return {key:'custom', title:'Custom engineered solution required. Contact Atkins & Hoyle.', why:'Total lift exceeds available standard capacities. Please contact our engineering team for a tailored solution.', swl:'Varies', type:'custom', link:pages.contact};
+        if(davit){ davit.manualOrPower = computePowerText(davit.key); davit.totalLift = totalLift; davit.safetyMargin = Number(davit.swl) - totalLift; davit.isFirstFit = true; return davit; }
+        return {key:'custom', title:'Custom engineered solution required. Contact Atkins & Hoyle.', why:'Total lift exceeds available standard capacities. Please contact our engineering team for a tailored solution.', swl:'Varies', type:'custom', link:pages.contact, totalLift};
       }
 
       // Otherwise prefer davits for lighter loads
       const davit = findModelByList(davitList);
       if(davit){
         if(tenderType === 'hardskiff') davit.addons = ['Gunnel Lock'];
-        davit.manualOrPower = POWER_OPTION_MODELS.has(davit.key) ? 'Power Option Available' : 'Manual pulley system operation';
+        davit.manualOrPower = computePowerText(davit.key);
+        davit.totalLift = totalLift;
+        davit.safetyMargin = Number(davit.swl) - totalLift;
+        davit.isFirstFit = true;
         return davit;
       }
 
       // Fallback crane selection
       const crane = findModelByList(CRANE_MODELS);
-      if(crane){ crane.manualOrPower = POWER_OPTION_MODELS.has(crane.key) ? 'Power Option Available' : 'Manual pulley system operation'; return crane; }
+      if(crane){ crane.manualOrPower = computePowerText(crane.key); crane.totalLift = totalLift; crane.safetyMargin = Number(crane.swl) - totalLift; crane.isFirstFit = true; return crane; }
 
       // final fallback: custom
-      return {key:'custom', title:'Custom engineered solution required. Contact Atkins & Hoyle.', why:'Unable to find a suitable standard model for your lift requirement.', swl:'Varies', type:'custom', link:pages.contact};
+      return {key:'custom', title:'Custom engineered solution required. Contact Atkins & Hoyle.', why:'Unable to find a suitable standard model for your lift requirement.', swl:'Varies', type:'custom', link:pages.contact, totalLift};
     }
 
     function formatResult(rec, inputs){
@@ -416,34 +433,72 @@
       const imgUrl = rec.image || '';
       const features = (typeof KEY_FEATURES !== 'undefined') ? (KEY_FEATURES[rec.key] || []) : [];
       const featuresHTML = `
-        <h4 style="margin-top:12px;color:var(--navy);font-size:14px">Key Features</h4>
-        <ul class="key-features">
-          ${features.map(f => `<li>${f}</li>`).join('')}
-        </ul>
+        <div itemprop="description">
+          <h4 style="margin-top:12px;color:var(--navy);font-size:14px">Key Features</h4>
+          <ul class="key-features">
+            ${features.map(f => `<li>${f}</li>`).join('')}
+          </ul>
+        </div>
       `;
 
+      // Build 'Best For' bullets dynamically from inputs
+      const bestFor = [];
+      if(inputs && inputs.tenderType){
+        const mapTender = {inflatable:'Inflatable tenders', rib:'RIBs', hardskiff:'Hard skiffs'};
+        const tenderLabel = mapTender[inputs.tenderType] || String(inputs.tenderType);
+        bestFor.push(`${tenderLabel} — up to ${rec.swl} lbs`);
+      }
+      if(inputs && inputs.mount){
+        const mapMount = {swim:'Swim Platform', transom:'Transom', rail:'Rail', deck:'Deck'};
+        const mountLabelShort = mapMount[inputs.mount] || inputs.mount;
+        bestFor.push(`${mountLabelShort} mounting applications`);
+      }
+      if(inputs && inputs.winchPref === 'electric'){
+        bestFor.push('Electric lift setup');
+      }
+      const bestForHTML = bestFor.length ? `
+        <h4 style="margin-top:12px;color:var(--navy);font-size:14px">Best For:</h4>
+        <ul style="padding-left:18px;margin-top:6px;color:var(--muted);font-size:13px">
+          ${bestFor.map(b => `<li>${b}</li>`).join('')}
+        </ul>
+      ` : '';
+
+      const safety = (typeof rec.safetyMargin !== 'undefined' && rec.safetyMargin !== null) ? rec.safetyMargin : (Number(rec.swl||0) - (Number(inputs.weight||0) + Number(inputs.engineWeight||0)));
+      const requiredLift = rec.totalLift || (Number(inputs.weight||0) + Number(inputs.engineWeight||0));
+      const explanation = rec.isFirstFit ? `<div style="margin-top:8px;color:var(--muted);font-size:13px">This model is recommended because your required lift of ${requiredLift} lbs exceeds the capacity of smaller models.</div>` : '';
+
       const recommendedCard = `
-        <div class="recommended-card" style="border:1px solid var(--border);padding:12px;border-radius:8px;background:#fff;margin-bottom:12px">
+        <div class="recommended-card" itemscope itemtype="https://schema.org/Product" style="border:1px solid var(--border);padding:12px;border-radius:8px;background:#fff;margin-bottom:12px">
           <div style="display:flex;gap:8px;margin-top:12px">
             <a class="primary" href="${rec.link}" target="_blank" style="text-decoration:none;display:inline-block">View Product Page</a>
             <button id="requestQuoteBtn" class="primary" style="margin-left:8px">Request a Quote</button>
             <button id="talkBtn" class="ghost" style="margin-left:8px">Talk to an Expert</button>
           </div>
 
-          <img src="${imgUrl}" alt="${modelName}" class="recommendation-image">
+          <div style="margin-top:8px;color:var(--muted);font-size:13px">
+            <div style="font-weight:700">Required Lift Capacity: ${requiredLift} lbs</div>
+            <div style="font-weight:800;margin-top:6px">Selected Model Capacity: ${rec.swl} lbs</div>
+            <div style="margin-top:6px; ${safety>0 ? 'color:green' : 'color:var(--muted)'}">Safety Margin: ${safety} lbs</div>
+            ${explanation}
+          </div>
+
+          <div style="margin-top:8px;color:var(--muted);font-size:12px">✓ Marine-grade construction&nbsp;&nbsp; ✓ Built for harsh marine environments&nbsp;&nbsp; ✓ Backed by manufacturer warranty</div>
+
+          <img itemprop="image" src="${imgUrl}" alt="${modelName}" class="recommendation-image">
 
           <div style="color:var(--navy);font-weight:700;font-size:12px">RECOMMENDED SOLUTION</div>
-          <div style="font-family:'Playfair Display';font-size:24px;color:var(--navy);font-weight:800;margin-top:6px">${modelName}</div>
+          <div itemprop="name" style="font-family:'Playfair Display';font-size:24px;color:var(--navy);font-weight:800;margin-top:6px">${modelName}</div>
 
           <div style="margin-top:10px;color:var(--muted);font-size:14px">
             <div><strong>Rated Capacity:</strong> ${rated}</div>
             <div style="margin-top:6px"><strong>Ideal Mounting:</strong> ${mountType}</div>
-            <div style="margin-top:6px"><strong>Compatible With:</strong> ${rec.type === 'crane' ? 'Heavy tenders, powered winch options' : 'Inflatables, RIBs, outboards'}</div>
           </div>
+
+          ${bestForHTML}
 
           ${featuresHTML}
 
-          <div style="margin-top:10px;color:var(--muted);font-size:13px">Total lift: ${Number(inputs.weight||0) + Number(inputs.engineWeight||0)} lbs</div>
+          <div style="margin-top:10px;color:var(--muted);font-size:13px">Total lift: ${requiredLift} lbs</div>
 
           ${rec.addons && rec.addons.length ? `<div style="margin-top:8px;color:var(--navy);font-weight:700">Add-ons</div><div style="color:var(--muted);font-size:13px">${rec.addons.join(', ')}</div>` : ''}
 
