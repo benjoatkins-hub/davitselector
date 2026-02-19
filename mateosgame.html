@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Energy Fighter — Prototype</title>
+  <style>
+    html,body{height:100%;margin:0;font-family:Inter,Arial,sans-serif;background:#0b1220;color:#fff}
+    .wrap{max-width:980px;margin:24px auto;padding:18px;background:linear-gradient(180deg,#071021 0%,#0f1a2a 100%);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.6)}
+    header{display:flex;align-items:center;justify-content:space-between}
+    h1{font-size:20px;margin:0;color:#fff}
+    p.lead{color:#b8c6d1;margin:6px 0 12px}
+    canvas{display:block;background:linear-gradient(180deg,#0a1724,#07101b);border-radius:6px;width:100%;height:auto}
+    .hud{display:flex;gap:12px;align-items:center;margin-top:12px}
+    .btn{background:#1b6bff;padding:8px 12px;border-radius:6px;color:#fff;text-decoration:none;border:none;cursor:pointer;font-weight:700}
+    .muted{color:#9fb0c5}
+    .controls{margin-top:12px;color:#cde3ff;font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Energy Fighter — Prototype</h1>
+        <p class="lead">A fast single-file HTML5 canvas prototype inspired by high-energy anime fighting. Uses original art and sounds.</p>
+      </div>
+      <div>
+        <button id="resetBtn" class="btn">Restart</button>
+      </div>
+    </header>
+
+    <canvas id="game" width="960" height="540"></canvas>
+
+    <div class="hud">
+      <div id="score" class="muted">Score: 0</div>
+      <div id="lives" class="muted">Lives: 3</div>
+      <div id="health" class="muted">Health: 100%</div>
+      <div id="coins" class="muted">Coins: 0</div>
+      <div id="super" class="muted">Super: No</div>
+      <div id="energy" class="muted">Energy: 0%</div>
+      <div id="cycle" class="muted">Cycle: 30.0s | Fly: 10.0s</div>
+    </div>
+
+    <div class="controls">
+      Controls: Move = Arrow keys or A/D, Jump = W / Up, Attack = Z, Energy Blast = X (charge to increase power).<br>
+      This prototype includes enemies, pickups, scoring, and simple sound effects.
+    </div>
+  </div>
+
+  <script>
+  // Single-file game prototype
+  (function(){
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const LOWER_BAND = H * 0.6; // shared lower-air / ground band
+
+    // Simple audio helper (WebAudio)
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function tone(freq, time=0.08, type='sine', gain=0.12){
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type; o.frequency.value = freq; g.gain.value = gain;
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(); o.stop(audioCtx.currentTime + time);
+    }
+
+    // Game state
+    let keys = {};
+    let score = 0, lives = 3;
+    let coinCount = 0;
+    let killCount = 0;
+    let superStock = 0; // granted by kill milestones (3 per 100 kills)
+    let lastTime = 0;
+    let entities = []; // enemies and pickups
+
+    // Player
+    const player = {
+      x:120, y:H-120, w:44, h:64, vx:0, vy:0, onGround:false, facing:1,
+      energy:0, charging:false, hp:100,
+      // flight
+      flyTimeMax: 10000, // milliseconds (10s)
+      flyTime: 10000
+    };
+
+    // Simple physics
+    const gravity = 0.9, friction = 0.86;
+
+    // Utility
+    function rand(min,max){return Math.random()*(max-min)+min}
+
+    // Visual elements: clouds and boulders
+    const clouds = [];
+    for(let i=0;i<6;i++){ clouds.push({x: rand(0,W), y: rand(30, H * 0.35), w: rand(80,180), vx: rand(0.05,0.3)}); }
+    const boulders = [];
+    for(let i=0;i<5;i++){ boulders.push({x: rand(60, W-60), y: rand(LOWER_BAND + 6, H-18), r: rand(8,26)}); }
+
+    // Spawn enemies and pickups
+    function spawnEnemy(){
+      // limit active enemies to 6
+      const activeEnemies = entities.filter(en => en.type === 'enemy').length;
+      if(activeEnemies >= 6) return;
+      const side = Math.random()>.5?1:-1;
+      // decide variant: equal chance for normal, strong, or boss (1/3 each)
+      const variants = ['normal','strong','boss'];
+      const variant = variants[Math.floor(Math.random()*3)];
+      // place enemy on the same vertical band as the player (with small jitter)
+      const baseY = player.y + (player.h - 56) / 2;
+      const y = baseY + rand(-8, 8);
+      const speedRange = variant === 'boss' ? [0.6,1.0] : [0.9,1.6];
+      const e = {type:'enemy', variant: variant, x: side>0 ? -40 : W+40, y: y, w:48, h:56, vx: side>0? rand(speedRange[0],speedRange[1]) : rand(-speedRange[1],-speedRange[0]), hp: variant === 'boss' ? 5 : (variant === 'strong' ? 3 : 1)};
+      entities.push(e);
+    }
+    function spawnPickup(x,y){
+      // spawn a coin at given position or randomly on-screen; clamp to visible area so it's always reachable
+      const minX = 60, maxX = W - 60;
+      const minY = 80, maxY = LOWER_BAND - 48;
+      let px = (typeof x === 'number') ? x : rand(minX, maxX);
+      let py = (typeof y === 'number') ? y : rand(minY, maxY);
+      px = Math.max(minX, Math.min(maxX, px));
+      py = Math.max(minY, Math.min(maxY, py));
+      const p = {type:'pickup', kind:'coin', x: px - 9, y: py - 9, w:18, h:18, value:1};
+      entities.push(p);
+    }
+
+    // Input
+    window.addEventListener('keydown', e=>{ 
+      keys[e.key.toLowerCase()] = true; 
+      if(e.key===' '){ e.preventDefault(); }
+      // jump on Up/W (allow mid-air if flyTime available)
+      if(e.key === 'ArrowUp' || e.key.toLowerCase() === 'w'){
+        if(player.onGround || player.flyTime > 0){
+          player.vy = -12; player.onGround = false; tone(300,0.06,'sine',0.06);
+          if(!player.onGround) player.flyTime = Math.max(0, player.flyTime - 120);
+        }
+      }
+      // deploy super blast via R
+      if(e.key.toLowerCase() === 'r'){
+        if(superStock > 0){
+          const power = 18;
+          const superProj = {type:'super', x:player.x + player.w/2 + (player.facing>0?28:-28), y:player.y+22, w:32, h:16, vx: player.facing * (8 + power*0.6), power, hitsRemaining: 6, lifespan: 3500, created: Date.now()};
+          entities.push(superProj);
+          superStock = Math.max(0, superStock - 1);
+          tone(420,0.32,'sawtooth',0.16);
+        }
+      }
+      // board-clear super via T (costs 5 superStock)
+      if(e.key.toLowerCase() === 't'){
+        if(superStock >= 5){
+          let removed = 0;
+          for(let i = entities.length - 1; i >= 0; i--){
+            if(entities[i] && entities[i].type === 'enemy'){
+              entities.splice(i,1);
+              removed += 1;
+              score += 60;
+              killCount += 1;
+            }
+          }
+          superStock = Math.max(0, superStock - 5);
+          // award per-100 kills
+          while(killCount >= 100){ killCount -= 100; superStock += 3; tone(920,0.18,'sine',0.18); }
+          // feedback
+          tone(80,0.5,'sawtooth',0.18);
+          flashTimer = 400;
+        }
+      }
+    });
+    window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+
+    document.getElementById('resetBtn').addEventListener('click', resetGame);
+
+    function resetGame(){
+      score = 0; lives = 3;
+      player.x = 120;
+      player.y = (H * 0.6) - player.h; // start in the lower air band
+      player.vx = 0; player.vy = 0; player.onGround = false;
+      player.energy = 0; player.flyTime = player.flyTimeMax;
+      cycleTimer = 0;
+      entities = [];
+      coinCount = 0; killCount = 0; superStock = 0;
+    }
+
+    // Simple rectangle collision
+    function collide(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+
+    // Draw player (original art: stylized fighter)
+    function drawPlayer(p){
+      ctx.save();
+      // charging aura
+      if(p.charging){ ctx.globalAlpha = 0.18; ctx.fillStyle = '#ffd86b'; ctx.beginPath(); ctx.ellipse(p.x+p.w/2, p.y+p.h/2, 48 + p.energy*0.2, 72 + p.energy*0.25, 0, 0, Math.PI*2); ctx.fill(); }
+
+      // pants / lower robe
+      ctx.fillStyle = '#ff8c1a'; ctx.fillRect(p.x+6, p.y+28, p.w-12, p.h-20);
+      // sash
+      ctx.fillStyle = '#b24d00'; ctx.fillRect(p.x+8, p.y+42, p.w-16, 8);
+
+      // gi torso (orange) and blue undershirt (V-neck)
+      ctx.fillStyle = '#ff8c1a'; ctx.fillRect(p.x+6, p.y+12, p.w-12, 28);
+      ctx.fillStyle = '#0b5bd6'; ctx.beginPath(); ctx.moveTo(p.x + p.w/2, p.y + 18); ctx.lineTo(p.x + 10, p.y + 38); ctx.lineTo(p.x + p.w - 10, p.y + 38); ctx.closePath(); ctx.fill();
+
+      // sleeves
+      ctx.fillStyle = '#ff8c1a'; ctx.fillRect(p.x-6, p.y+28, 14, 12); ctx.fillRect(p.x+p.w-8, p.y+28, 14, 12);
+
+      // boots
+      ctx.fillStyle = '#2b6bff'; ctx.fillRect(p.x+6, p.y+p.h-12, 14, 8); ctx.fillRect(p.x+p.w-20, p.y+p.h-12, 14, 8);
+
+      // face
+      ctx.fillStyle = '#f1d2b0'; ctx.beginPath(); ctx.ellipse(p.x+p.w/2, p.y+10, 12, 12, 0, 0, Math.PI*2); ctx.fill();
+
+      // spiky hair (stylized, original)
+      ctx.fillStyle = '#0b0b0b'; ctx.beginPath();
+      ctx.moveTo(p.x + p.w/2, p.y - 8);
+      ctx.lineTo(p.x + p.w - 2, p.y + 6);
+      ctx.lineTo(p.x + p.w/2 + 6, p.y + 2);
+      ctx.lineTo(p.x + p.w/2 + 2, p.y + 12);
+      ctx.lineTo(p.x + p.w/2 - 6, p.y + 4);
+      ctx.lineTo(p.x + 2, p.y + 8);
+      ctx.closePath(); ctx.fill();
+
+      // eyes (simple line brows)
+      ctx.fillStyle = '#111'; ctx.fillRect(p.x + p.w*0.32, p.y + 8, p.w*0.08, 2); ctx.fillRect(p.x + p.w*0.56, p.y + 8, p.w*0.08, 2);
+
+      ctx.restore();
+    }
+
+    // Draw enemy (original, Freeza-inspired alien - original art, not a copy)
+    function drawEnemy(e){
+      // tail / sweep behind
+      ctx.save();
+      ctx.strokeStyle = '#5a2a8c'; ctx.lineWidth = Math.max(4, e.w * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w/2, e.y + e.h - 6);
+      ctx.quadraticCurveTo(e.x + e.w + 18, e.y + e.h/2, e.x + e.w/2, e.y + e.h/2 - 8);
+      ctx.stroke();
+      ctx.restore();
+
+      // pale body
+      ctx.fillStyle = '#f7efe9';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*0.45, e.h*0.6, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // purple chest plate
+      ctx.fillStyle = '#7a2be2';
+      ctx.fillRect(e.x + e.w*0.2, e.y + e.h*0.48, e.w*0.6, e.h*0.12);
+
+      // head crest
+      ctx.fillStyle = '#6a1abf';
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.2, e.y + e.h*0.18);
+      ctx.quadraticCurveTo(e.x + e.w/2, e.y - e.h*0.08, e.x + e.w*0.8, e.y + e.h*0.18);
+      ctx.lineTo(e.x + e.w*0.8, e.y + e.h*0.34);
+      ctx.lineTo(e.x + e.w*0.2, e.y + e.h*0.34);
+      ctx.closePath(); ctx.fill();
+
+      // eyes
+      ctx.fillStyle = '#111';
+      ctx.fillRect(e.x + e.w*0.32, e.y + e.h*0.26, e.w*0.12, e.h*0.06);
+      ctx.fillRect(e.x + e.w*0.56, e.y + e.h*0.26, e.w*0.12, e.h*0.06);
+
+      // mouth line
+      ctx.strokeStyle = '#3b2b2b'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(e.x + e.w*0.4, e.y + e.h*0.38); ctx.lineTo(e.x + e.w*0.6, e.y + e.h*0.38); ctx.stroke();
+    }
+
+    // Draw strong enemy (original insectoid, inspired look but distinct)
+    function drawStrongEnemy(e){
+      ctx.save();
+      // body
+      ctx.fillStyle = '#3db85b';
+      ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*0.5, e.h*0.7, 0, 0, Math.PI*2); ctx.fill();
+      // darker plates
+      ctx.fillStyle = '#2a8a45'; ctx.fillRect(e.x + e.w*0.18, e.y + e.h*0.44, e.w*0.64, e.h*0.12);
+      // head crest
+      ctx.fillStyle = '#1f6b3f'; ctx.beginPath(); ctx.moveTo(e.x + e.w*0.2, e.y + e.h*0.18); ctx.quadraticCurveTo(e.x + e.w/2, e.y - e.h*0.12, e.x + e.w*0.8, e.y + e.h*0.18); ctx.closePath(); ctx.fill();
+      // eyes
+      ctx.fillStyle = '#07321a'; ctx.fillRect(e.x + e.w*0.34, e.y + e.h*0.26, e.w*0.12, e.h*0.06); ctx.fillRect(e.x + e.w*0.54, e.y + e.h*0.26, e.w*0.12, e.h*0.06);
+      // armored shoulder spikes
+      ctx.fillStyle = '#2a8a45'; ctx.beginPath(); ctx.moveTo(e.x - 4, e.y + e.h*0.5); ctx.lineTo(e.x + 8, e.y + e.h*0.36); ctx.lineTo(e.x + 6, e.y + e.h*0.62); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(e.x + e.w + 4, e.y + e.h*0.5); ctx.lineTo(e.x + e.w - 8, e.y + e.h*0.36); ctx.lineTo(e.x + e.w - 6, e.y + e.h*0.62); ctx.fill();
+      // subtle glow to indicate strength
+      if(e.hp > 1){ ctx.globalAlpha = 0.08; ctx.fillStyle = '#9ff5b6'; ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w, e.h, 0, 0, Math.PI*2); ctx.fill(); }
+      ctx.restore();
+    }
+
+    // Draw boss enemy (Beerus-inspired original cat-deity look — original art)
+    function drawBoss(e){
+      ctx.save();
+      // body
+      ctx.fillStyle = '#6a3aa6';
+      ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*0.5, e.h*0.75, 0, 0, Math.PI*2); ctx.fill();
+      // chest stripe
+      ctx.fillStyle = '#3b1f4b'; ctx.fillRect(e.x + e.w*0.2, e.y + e.h*0.48, e.w*0.6, e.h*0.12);
+      // long ears / crown-like shape
+      ctx.fillStyle = '#4d2a6a'; ctx.beginPath(); ctx.moveTo(e.x + e.w*0.2, e.y + e.h*0.14); ctx.quadraticCurveTo(e.x + e.w/2, e.y - e.h*0.2, e.x + e.w*0.8, e.y + e.h*0.14); ctx.closePath(); ctx.fill();
+      // face / eyes
+      ctx.fillStyle = '#f1d2b0'; ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h*0.3, e.w*0.32, e.h*0.22, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#081018'; ctx.fillRect(e.x + e.w*0.36, e.y + e.h*0.28, e.w*0.06, e.h*0.05); ctx.fillRect(e.x + e.w*0.58, e.y + e.h*0.28, e.w*0.06, e.h*0.05);
+      // arms
+      ctx.fillStyle = '#6a3aa6'; ctx.fillRect(e.x - 6, e.y + e.h*0.44, 12, 18); ctx.fillRect(e.x + e.w -6, e.y + e.h*0.44, 12, 18);
+      // regal sash
+      ctx.fillStyle = '#f5c04f'; ctx.beginPath(); ctx.moveTo(e.x + e.w*0.22, e.y + e.h*0.5); ctx.lineTo(e.x + e.w*0.5, e.y + e.h*0.6); ctx.lineTo(e.x + e.w*0.78, e.y + e.h*0.5); ctx.closePath(); ctx.fill();
+      // slight glow when damaged
+      if(e.hp < (variantHp(e))) { ctx.globalAlpha = 0.06; ctx.fillStyle = '#ffe6a3'; ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*1.1, e.h*1.1, 0, 0, Math.PI*2); ctx.fill(); }
+      ctx.restore();
+    }
+
+    function variantHp(e){ return e.variant === 'boss' ? 5 : (e.variant === 'strong' ? 3 : 1); }
+
+    // Draw pickup
+    function drawPickup(p){ ctx.fillStyle='#ffd86b'; ctx.beginPath(); ctx.arc(p.x+p.w/2, p.y+p.h/2, p.w/2,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#000'; ctx.fillRect(p.x+p.w/2-2, p.y+p.h/2-8,4,10); }
+
+    // Update loop
+    let spawnTimer = 0;
+    let cycleTimer = 0; // ms counter for flight windows (30s cycle)
+    let flashTimer = 0; // ms, visual flash when board-clear used
+    // damage per second when in contact with enemy
+    const contactDPS = 20; // HP per second
+    function update(dt){
+      // player input
+      const left = keys['arrowleft'] || keys['a'];
+      const right = keys['arrowright'] || keys['d'];
+      const up = keys['arrowup'] || keys['w'];
+      const attack = keys['z'];
+      const blast = keys['x'];
+
+      if(left) { player.vx = Math.max(player.vx - 0.6, -4); player.facing = -1; }
+      if(right){ player.vx = Math.min(player.vx + 0.6, 4); player.facing = 1; }
+      if(!left && !right) player.vx *= friction;
+
+      // (input listeners handled at top-level)
+
+      // energy blast charging
+      if(blast){ player.charging = true; player.energy = Math.min(100, player.energy + 0.9); }
+      else if(player.charging){
+        // release blast
+        const power = Math.max(8, 6 + Math.floor(player.energy/20));
+        // if player has enough coins, fire a super blast (piercing)
+        if(coinCount >= 10){
+          const superProj = {type:'super', x:player.x + player.w/2 + (player.facing>0?28:-28), y:player.y+22, w:28, h:16, vx: player.facing * (6 + power*0.6), power, hitsRemaining: 6, lifespan: 3500, created: Date.now()};
+          entities.push(superProj);
+          coinCount = 0; // consume coins
+          tone(320, 0.4, 'sawtooth', 0.16);
+        } else {
+          // regular projectile (single-kill)
+          const proj = {type:'proj', x:player.x + player.w/2 + (player.facing>0?20:-20), y:player.y+24, w:12, h:8, vx: player.facing * (6 + power*0.6), power};
+          entities.push(proj);
+          tone(180 + power*30, 0.12, 'sawtooth', 0.12);
+        }
+        player.charging = false; player.energy = 0;
+      }
+
+      // physics
+      player.vy += gravity;
+      player.x += player.vx; player.y += player.vy;
+      // clamp player to a lower airborne band instead of hard ground snap
+      const lowerBand = H * 0.6;
+      if(player.y + player.h >= lowerBand){ player.y = lowerBand - player.h; player.vy = 0; player.onGround = true; }
+      if(player.x < 10) player.x = 10; if(player.x + player.w > W-10) player.x = W-10-player.w;
+
+      // update visual clouds
+      for(let c of clouds){ c.x += c.vx * dt * 0.06; if(c.x - c.w > W) c.x = -c.w - rand(20,80); }
+
+      // update entities
+      for(let i = entities.length-1; i>=0; i--){ const e = entities[i];
+        if(e.type==='enemy'){
+          e.x += e.vx;
+          // if enemy touches player, drain health over time
+          if(collide(player, e)){
+            player.hp = Math.max(0, player.hp - (contactDPS * (dt/1000)));
+            // small knockback to avoid instant trapping
+            player.vx = -e.vx * 0.6;
+            tone(220, 0.04, 'sine', 0.06);
+          }
+          if(Math.abs(e.x - player.x) < 10 && Math.random() < 0.004){ /* occasional random move */ }
+          // strong and boss types stay on-screen and bounce at edges
+          if(e.variant === 'strong' || e.variant === 'boss'){
+            if(e.x < 20){ e.x = 20; e.vx = Math.abs(e.vx); }
+            if(e.x + e.w > W - 20){ e.x = W - 20 - e.w; e.vx = -Math.abs(e.vx); }
+          } else {
+            if(e.x < -100 || e.x > W+100) entities.splice(i,1);
+          }
+        }
+        if(e.type==='proj'){
+          e.x += e.vx; // hit enemies
+          for(let j=entities.length-1;j>=0;j--){ const t=entities[j]; if(t.type==='enemy' && collide(e,t)){
+              // projectile deals 1 hp
+              t.hp = (typeof t.hp === 'number') ? t.hp : 1;
+              t.hp -= 1;
+              // hit feedback
+              tone(440,0.06,'triangle',0.12);
+              if(t.hp <= 0){
+                // Only bosses drop coins — spawn 3 guaranteed coins at boss death
+                if(t.variant === 'boss'){
+                  for(let c=0;c<3;c++) spawnPickup(t.x + t.w/2 + (c-1)*10, t.y + t.h/2 + (c%2? -6:4));
+                }
+                // scoring: stronger enemies give more
+                score += (t.variant === 'strong') ? 180 : (t.variant === 'boss' ? 300 : 35);
+                killCount += 1;
+                // award per-100 kills
+                while(killCount >= 100){ killCount -= 100; superStock += 3; tone(920,0.18,'sine',0.18); }
+                entities.splice(j,1);
+              }
+              // remove projectile after hit
+              entities.splice(i,1);
+              break;
+            } }
+          if(e.x < -50 || e.x > W+50) entities.splice(i,1);
+        }
+        if(e.type==='super'){
+          // piercing projectile: moves, damages multiple enemies until hitsRemaining or lifespan expires
+          e.x += e.vx;
+          for(let j=entities.length-1;j>=0;j--){ const t = entities[j]; if(t.type==='enemy' && collide(e,t)){
+              // super deals 3 hp (instant kill for strong)
+              t.hp = (typeof t.hp === 'number') ? t.hp : 1;
+              t.hp -= 3;
+              tone(720,0.06,'triangle',0.14);
+              if(t.hp <= 0){
+                // Only bosses drop coins — spawn 3 guaranteed coins at boss death
+                if(t.variant === 'boss'){
+                  for(let c=0;c<3;c++) spawnPickup(t.x + t.w/2 + (c-1)*10, t.y + t.h/2 + (c%2? -6:4));
+                }
+                score += (t.variant === 'strong') ? 220 : (t.variant === 'boss' ? 500 : 60);
+                killCount += 1;
+                while(killCount >= 100){ killCount -= 100; superStock += 3; tone(920,0.18,'sine',0.18); }
+                entities.splice(j,1);
+              }
+              e.hitsRemaining = (typeof e.hitsRemaining === 'number') ? e.hitsRemaining - 1 : 0;
+            }
+          }
+          if((e.hitsRemaining !== undefined && e.hitsRemaining <= 0) || (Date.now() - e.created > (e.lifespan || 3500))){ entities.splice(i,1); }
+        }
+        if(e.type==='pickup'){
+          if(collide(player,e)){
+            // coin pickup
+            if(e.kind === 'coin'){
+              coinCount += (e.value || 1);
+              score += (e.value || 1) * 5;
+              tone(880,0.08,'sine',0.08);
+              entities.splice(i,1);
+            } else {
+              score += e.value; entities.splice(i,1); tone(880,0.08,'sine',0.08);
+            }
+          }
+        }
+      }
+
+      // spawn logic (reduced spawn frequency)
+      spawnTimer += dt;
+      if(spawnTimer > 3000){ spawnEnemy(); spawnTimer = 0; }
+
+      // flight cycle: grant up to flyTimeMax every 30 seconds
+      cycleTimer += dt;
+      if(cycleTimer >= 30000){
+        cycleTimer -= 30000;
+        player.flyTime = player.flyTimeMax;
+      }
+
+      // flying: hold up to ascend while you have flyTime remaining
+      const upHeld = keys['arrowup'] || keys['w'];
+      if(upHeld && player.flyTime > 0){
+        // provide lift
+        player.vy = Math.max(player.vy - 0.9, -6);
+        player.flyTime = Math.max(0, player.flyTime - dt);
+      }
+      // no recharge: fly time depletes until exhausted
+
+      // update flash timer
+      if(flashTimer > 0) flashTimer = Math.max(0, flashTimer - dt);
+
+      // update HUD
+      document.getElementById('score').textContent = 'Score: ' + score;
+      document.getElementById('lives').textContent = 'Lives: ' + lives;
+      document.getElementById('health').textContent = 'Health: ' + Math.max(0, Math.round(player.hp)) + '%';
+      document.getElementById('coins').textContent = 'Coins: ' + coinCount;
+      document.getElementById('super').textContent = 'Super: ' + superStock;
+      document.getElementById('energy').textContent = 'Energy: ' + Math.round(player.energy) + '%';
+      // cycle HUD: remaining time until cycle reset and remaining fly time
+      const remainingCycle = Math.max(0, (30000 - cycleTimer) / 1000);
+      const flySecs = Math.max(0, player.flyTime / 1000).toFixed(1);
+      document.getElementById('cycle').textContent = 'Cycle: ' + remainingCycle.toFixed(1) + 's | Fly: ' + flySecs + 's';
+
+      // handle death / life loss
+      if(player.hp <= 0){
+        lives = Math.max(0, lives - 1);
+        tone(120,0.28,'sawtooth',0.16);
+        // respawn or game over
+        if(lives > 0){
+          player.hp = 100; player.x = 120; player.y = H-120; entities = []; // clear threats
+        } else {
+          // game over - reset everything after brief pause
+          player.hp = 100; score = 0; lives = 3; entities = []; player.x = 120; player.y = H-120;
+        }
+      }
+    }
+
+    function render(){
+      // sky background gradient
+      const g = ctx.createLinearGradient(0,0,0,H);
+      g.addColorStop(0,'#87ceeb'); g.addColorStop(1,'#bfe9ff');
+      ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+
+      // clouds
+      for(let c of clouds){ ctx.save(); ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.beginPath(); ctx.ellipse(c.x, c.y, c.w*0.6, c.w*0.32, 0, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.ellipse(c.x + c.w*0.28, c.y + 6, c.w*0.48, c.w*0.28, 0, 0, Math.PI*2); ctx.fill(); ctx.restore(); }
+
+      // grassy ground
+      ctx.fillStyle = '#2ea84a'; ctx.fillRect(0, LOWER_BAND, W, H - LOWER_BAND);
+      // draw a few rocky boulders
+      for(let b of boulders){ ctx.save(); ctx.fillStyle = '#6b6b6b'; ctx.beginPath(); ctx.ellipse(b.x, b.y, b.r*1.2, b.r, 0, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#4f4f4f'; ctx.beginPath(); ctx.ellipse(b.x - b.r*0.2, b.y - b.r*0.2, b.r*0.6, b.r*0.5, 0, 0, Math.PI*2); ctx.fill(); ctx.restore(); }
+
+      // draw entities
+      entities.forEach(e=>{ 
+        if(e.type==='enemy'){
+          if(e.variant === 'strong') drawStrongEnemy(e);
+          else if(e.variant === 'boss') drawBoss(e);
+          else drawEnemy(e);
+        } else if(e.type==='pickup') drawPickup(e); else if(e.type==='proj'){ ctx.fillStyle='#ffd86b'; ctx.fillRect(e.x,e.y,e.w,e.h); }
+      });
+
+      // draw player
+      drawPlayer(player);
+
+      // simple UI overlay
+      ctx.fillStyle = 'rgba(0,0,0,0.12)'; ctx.fillRect(12,12,200,36);
+      ctx.fillStyle = '#fff'; ctx.font = '14px Arial'; ctx.fillText('Energy Fighter Prototype',20,36);
+
+      // flash overlay when board-clear used
+      if(flashTimer > 0){
+        const alpha = Math.min(0.9, flashTimer / 400);
+        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+        ctx.fillRect(0,0,W,H);
+      }
+    }
+
+    // Main loop
+    function loop(ts){
+      if(!lastTime) lastTime = ts; const dt = ts - lastTime; lastTime = ts;
+      update(dt);
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    // start
+    resetGame();
+    // seed a few enemies
+    for(let i=0;i<2;i++) spawnEnemy();
+    requestAnimationFrame(loop);
+
+    // expose for debugging
+    window._game = {player, entities, spawnEnemy, spawnPickup};
+  })();
+  </script>
+</body>
+</html>
