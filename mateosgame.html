@@ -35,6 +35,7 @@
       <div id="score" class="muted">Score: 0</div>
       <div id="lives" class="muted">Lives: 3</div>
       <div id="health" class="muted">Health: 100%</div>
+      <div id="kills" class="muted">Kills: 0</div>
       <div id="coins" class="muted">Coins: 0</div>
       <div id="super" class="muted">Super: No</div>
       <div id="energy" class="muted">Energy: 0%</div>
@@ -43,7 +44,7 @@
 
     <div class="controls">
       Controls: Move = Arrow keys or A/D, Jump = W / Up, Attack = Z, Energy Blast = X (charge to increase power).<br>
-      This prototype includes enemies, pickups, scoring, and simple sound effects.
+      This prototype includes enemies, pickups, scoring, and simple sound effects. <strong>Reach 50 kills to unlock a mini game!</strong>
     </div>
   </div>
 
@@ -73,6 +74,16 @@
     let superStock = 0; // granted by kill milestones (3 per 100 kills)
     let lastTime = 0;
     let entities = []; // enemies and pickups
+    
+    // Mini game and transformation
+    let miniGameTriggered = false;
+    let inMiniGame = false;
+    let redHairMode = false;
+    let miniGameBossesKilled = 0;
+    let miniGameHP = 10;
+    
+    // Cheat code tracking
+    let hackCheatUsed = false;
 
     // Player
     const player = {
@@ -178,6 +189,8 @@
       cycleTimer = 0;
       entities = [];
       coinCount = 0; killCount = 0; superStock = 0;
+      miniGameTriggered = false; inMiniGame = false; redHairMode = false;
+      miniGameBossesKilled = 0;
     }
 
     // Simple rectangle collision
@@ -207,8 +220,9 @@
       // face
       ctx.fillStyle = '#f1d2b0'; ctx.beginPath(); ctx.ellipse(p.x+p.w/2, p.y+10, 12, 12, 0, 0, Math.PI*2); ctx.fill();
 
-      // spiky hair (stylized, original)
-      ctx.fillStyle = '#0b0b0b'; ctx.beginPath();
+      // spiky hair (stylized, original) - red when transformed
+      ctx.fillStyle = redHairMode ? '#e63946' : '#0b0b0b'; 
+      ctx.beginPath();
       ctx.moveTo(p.x + p.w/2, p.y - 8);
       ctx.lineTo(p.x + p.w - 2, p.y + 6);
       ctx.lineTo(p.x + p.w/2 + 6, p.y + 2);
@@ -216,6 +230,16 @@
       ctx.lineTo(p.x + p.w/2 - 6, p.y + 4);
       ctx.lineTo(p.x + 2, p.y + 8);
       ctx.closePath(); ctx.fill();
+      
+      // red hair aura
+      if(redHairMode){
+        ctx.globalAlpha = 0.15;
+        ctx.fillStyle = '#ff4757';
+        ctx.beginPath();
+        ctx.ellipse(p.x + p.w/2, p.y + 5, 20, 18, 0, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
 
       // eyes (simple line brows)
       ctx.fillStyle = '#111'; ctx.fillRect(p.x + p.w*0.32, p.y + 8, p.w*0.08, 2); ctx.fillRect(p.x + p.w*0.56, p.y + 8, p.w*0.08, 2);
@@ -263,45 +287,209 @@
       ctx.beginPath(); ctx.moveTo(e.x + e.w*0.4, e.y + e.h*0.38); ctx.lineTo(e.x + e.w*0.6, e.y + e.h*0.38); ctx.stroke();
     }
 
-    // Draw strong enemy (original insectoid, inspired look but distinct)
+    // Draw strong enemy (Cell-inspired insectoid — original art)
     function drawStrongEnemy(e){
       ctx.save();
-      // body
-      ctx.fillStyle = '#3db85b';
-      ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*0.5, e.h*0.7, 0, 0, Math.PI*2); ctx.fill();
-      // darker plates
-      ctx.fillStyle = '#2a8a45'; ctx.fillRect(e.x + e.w*0.18, e.y + e.h*0.44, e.w*0.64, e.h*0.12);
-      // head crest
-      ctx.fillStyle = '#1f6b3f'; ctx.beginPath(); ctx.moveTo(e.x + e.w*0.2, e.y + e.h*0.18); ctx.quadraticCurveTo(e.x + e.w/2, e.y - e.h*0.12, e.x + e.w*0.8, e.y + e.h*0.18); ctx.closePath(); ctx.fill();
-      // eyes
-      ctx.fillStyle = '#07321a'; ctx.fillRect(e.x + e.w*0.34, e.y + e.h*0.26, e.w*0.12, e.h*0.06); ctx.fillRect(e.x + e.w*0.54, e.y + e.h*0.26, e.w*0.12, e.h*0.06);
-      // armored shoulder spikes
-      ctx.fillStyle = '#2a8a45'; ctx.beginPath(); ctx.moveTo(e.x - 4, e.y + e.h*0.5); ctx.lineTo(e.x + 8, e.y + e.h*0.36); ctx.lineTo(e.x + 6, e.y + e.h*0.62); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(e.x + e.w + 4, e.y + e.h*0.5); ctx.lineTo(e.x + e.w - 8, e.y + e.h*0.36); ctx.lineTo(e.x + e.w - 6, e.y + e.h*0.62); ctx.fill();
-      // subtle glow to indicate strength
-      if(e.hp > 1){ ctx.globalAlpha = 0.08; ctx.fillStyle = '#9ff5b6'; ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w, e.h, 0, 0, Math.PI*2); ctx.fill(); }
+      
+      // legs/lower body (green with spots)
+      ctx.fillStyle = '#5dbd4e';
+      ctx.fillRect(e.x + e.w*0.2, e.y + e.h*0.64, e.w*0.28, e.h*0.36);
+      ctx.fillRect(e.x + e.w*0.52, e.y + e.h*0.64, e.w*0.28, e.h*0.36);
+      // yellow boots/feet
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(e.x + e.w*0.2, e.y + e.h*0.92, e.w*0.28, e.h*0.08);
+      ctx.fillRect(e.x + e.w*0.52, e.y + e.h*0.92, e.w*0.28, e.h*0.08);
+      
+      // torso/body (spotted green)
+      ctx.fillStyle = '#5dbd4e';
+      ctx.beginPath(); 
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.5, e.w*0.46, e.h*0.42, 0, 0, Math.PI*2); 
+      ctx.fill();
+      
+      // spots on body (darker green/black)
+      ctx.fillStyle = '#1a4d2e';
+      for(let i=0; i<8; i++){
+        const spotX = e.x + e.w*(0.2 + Math.sin(i*1.3)*0.15 + 0.3);
+        const spotY = e.y + e.h*(0.4 + Math.cos(i*1.7)*0.2 + 0.2);
+        ctx.beginPath();
+        ctx.arc(spotX, spotY, e.w*0.06 + (i%2)*2, 0, Math.PI*2);
+        ctx.fill();
+      }
+      
+      // white chest armor plates
+      ctx.fillStyle = '#e8e8e8';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.46, e.w*0.32, e.h*0.28, 0, 0, Math.PI*2);
+      ctx.fill();
+      // armor detail lines
+      ctx.strokeStyle = '#b0b0b0';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.32, e.y + e.h*0.38);
+      ctx.lineTo(e.x + e.w*0.68, e.y + e.h*0.38);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.5, e.y + e.h*0.3);
+      ctx.lineTo(e.x + e.w*0.5, e.y + e.h*0.62);
+      ctx.stroke();
+      
+      // purple/dark shoulder plates
+      ctx.fillStyle = '#5a2d7a';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.15, e.y + e.h*0.42, e.w*0.18, e.h*0.16, -0.3, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.85, e.y + e.h*0.42, e.w*0.18, e.h*0.16, 0.3, 0, Math.PI*2);
+      ctx.fill();
+      
+      // arms (green spotted)
+      ctx.fillStyle = '#5dbd4e';
+      ctx.fillRect(e.x - 6, e.y + e.h*0.4, 12, 24);
+      ctx.fillRect(e.x + e.w - 6, e.y + e.h*0.4, 12, 24);
+      // spots on arms
+      ctx.fillStyle = '#1a4d2e';
+      ctx.beginPath(); ctx.arc(e.x - 2, e.y + e.h*0.48, 3, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(e.x + e.w + 2, e.y + e.h*0.48, 3, 0, Math.PI*2); ctx.fill();
+      
+      // black helmet/head crest (angular insectoid)
+      ctx.fillStyle = '#1a1a2e';
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.5, e.y - e.h*0.08);
+      ctx.lineTo(e.x + e.w*0.25, e.y + e.h*0.18);
+      ctx.lineTo(e.x + e.w*0.3, e.y + e.h*0.28);
+      ctx.lineTo(e.x + e.w*0.7, e.y + e.h*0.28);
+      ctx.lineTo(e.x + e.w*0.75, e.y + e.h*0.18);
+      ctx.closePath();
+      ctx.fill();
+      
+      // purple head accent
+      ctx.fillStyle = '#6a3d8a';
+      ctx.fillRect(e.x + e.w*0.35, e.y + e.h*0.14, e.w*0.3, e.h*0.08);
+      
+      // eyes (pink/red glowing)
+      ctx.fillStyle = '#ff1744';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.38, e.y + e.h*0.22, e.w*0.08, e.h*0.05, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.62, e.y + e.h*0.22, e.w*0.08, e.h*0.05, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // energy aura when strong
+      if(e.hp > 1){ 
+        ctx.globalAlpha = 0.10; 
+        ctx.fillStyle = '#7bed9f'; 
+        ctx.beginPath(); 
+        ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*0.9, e.h, 0, 0, Math.PI*2); 
+        ctx.fill(); 
+      }
       ctx.restore();
     }
 
     // Draw boss enemy (Beerus-inspired original cat-deity look — original art)
     function drawBoss(e){
       ctx.save();
-      // body
-      ctx.fillStyle = '#6a3aa6';
-      ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*0.5, e.h*0.75, 0, 0, Math.PI*2); ctx.fill();
-      // chest stripe
-      ctx.fillStyle = '#3b1f4b'; ctx.fillRect(e.x + e.w*0.2, e.y + e.h*0.48, e.w*0.6, e.h*0.12);
-      // long ears / crown-like shape
-      ctx.fillStyle = '#4d2a6a'; ctx.beginPath(); ctx.moveTo(e.x + e.w*0.2, e.y + e.h*0.14); ctx.quadraticCurveTo(e.x + e.w/2, e.y - e.h*0.2, e.x + e.w*0.8, e.y + e.h*0.14); ctx.closePath(); ctx.fill();
-      // face / eyes
-      ctx.fillStyle = '#f1d2b0'; ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h*0.3, e.w*0.32, e.h*0.22, 0, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = '#081018'; ctx.fillRect(e.x + e.w*0.36, e.y + e.h*0.28, e.w*0.06, e.h*0.05); ctx.fillRect(e.x + e.w*0.58, e.y + e.h*0.28, e.w*0.06, e.h*0.05);
-      // arms
-      ctx.fillStyle = '#6a3aa6'; ctx.fillRect(e.x - 6, e.y + e.h*0.44, 12, 18); ctx.fillRect(e.x + e.w -6, e.y + e.h*0.44, 12, 18);
-      // regal sash
-      ctx.fillStyle = '#f5c04f'; ctx.beginPath(); ctx.moveTo(e.x + e.w*0.22, e.y + e.h*0.5); ctx.lineTo(e.x + e.w*0.5, e.y + e.h*0.6); ctx.lineTo(e.x + e.w*0.78, e.y + e.h*0.5); ctx.closePath(); ctx.fill();
-      // slight glow when damaged
-      if(e.hp < (variantHp(e))) { ctx.globalAlpha = 0.06; ctx.fillStyle = '#ffe6a3'; ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*1.1, e.h*1.1, 0, 0, Math.PI*2); ctx.fill(); }
+      
+      // lower robes / pants (orange and gold flowing)
+      ctx.fillStyle = '#ff8533'; 
+      ctx.fillRect(e.x + e.w*0.15, e.y + e.h*0.52, e.w*0.7, e.h*0.48);
+      // gold trim on pants
+      ctx.fillStyle = '#d4af37'; 
+      ctx.fillRect(e.x + e.w*0.15, e.y + e.h*0.52, e.w*0.7, e.h*0.06);
+      
+      // blue sash / waist wrap
+      ctx.fillStyle = '#1e5ba8';
+      ctx.fillRect(e.x + e.w*0.12, e.y + e.h*0.44, e.w*0.76, e.h*0.14);
+      // sash detail
+      ctx.fillStyle = '#2b6bff';
+      ctx.fillRect(e.x + e.w*0.14, e.y + e.h*0.46, e.w*0.72, e.h*0.04);
+      
+      // upper body (purple skin)
+      ctx.fillStyle = '#9370db';
+      ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h*0.32, e.w*0.42, e.h*0.28, 0, 0, Math.PI*2); ctx.fill();
+      
+      // ornate collar / chest piece (gold)
+      ctx.fillStyle = '#d4af37';
+      ctx.beginPath();
+      ctx.arc(e.x + e.w/2, e.y + e.h*0.38, e.w*0.48, Math.PI * 1.1, Math.PI * 1.9);
+      ctx.arc(e.x + e.w/2, e.y + e.h*0.38, e.w*0.35, Math.PI * 1.9, Math.PI * 1.1, true);
+      ctx.closePath();
+      ctx.fill();
+      
+      // collar details (darker gold accents)
+      ctx.fillStyle = '#b8860b';
+      ctx.fillRect(e.x + e.w*0.22, e.y + e.h*0.36, e.w*0.08, e.h*0.04);
+      ctx.fillRect(e.x + e.w*0.7, e.y + e.h*0.36, e.w*0.08, e.h*0.04);
+      
+      // neck/shoulders purple
+      ctx.fillStyle = '#9370db';
+      ctx.fillRect(e.x + e.w*0.4, e.y + e.h*0.28, e.w*0.2, e.h*0.12);
+      
+      // long cat-like ears (purple, tall and pointed)
+      ctx.fillStyle = '#7a5bb5';
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.25, e.y + e.h*0.18);
+      ctx.lineTo(e.x + e.w*0.15, e.y - e.h*0.25);
+      ctx.lineTo(e.x + e.w*0.35, e.y + e.h*0.15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.75, e.y + e.h*0.18);
+      ctx.lineTo(e.x + e.w*0.85, e.y - e.h*0.25);
+      ctx.lineTo(e.x + e.w*0.65, e.y + e.h*0.15);
+      ctx.closePath();
+      ctx.fill();
+      
+      // head (purple)
+      ctx.fillStyle = '#9370db';
+      ctx.beginPath(); 
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.2, e.w*0.28, e.h*0.18, 0, 0, Math.PI*2); 
+      ctx.fill();
+      
+      // eyes (cat-like, slanted)
+      ctx.fillStyle = '#ffd700';
+      ctx.beginPath(); 
+      ctx.ellipse(e.x + e.w*0.38, e.y + e.h*0.2, e.w*0.08, e.h*0.05, 0, 0, Math.PI*2); 
+      ctx.fill();
+      ctx.beginPath(); 
+      ctx.ellipse(e.x + e.w*0.62, e.y + e.h*0.2, e.w*0.08, e.h*0.05, 0, 0, Math.PI*2); 
+      ctx.fill();
+      // pupils (vertical slits)
+      ctx.fillStyle = '#111';
+      ctx.fillRect(e.x + e.w*0.37, e.y + e.h*0.19, e.w*0.02, e.h*0.045);
+      ctx.fillRect(e.x + e.w*0.61, e.y + e.h*0.19, e.w*0.02, e.h*0.045);
+      
+      // arms (purple)
+      ctx.fillStyle = '#9370db'; 
+      ctx.fillRect(e.x - 8, e.y + e.h*0.36, 14, 22); 
+      ctx.fillRect(e.x + e.w - 6, e.y + e.h*0.36, 14, 22);
+      
+      // staff/scepter hint (if space permits - simple circle on stick)
+      ctx.strokeStyle = '#d4af37'; 
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w + 8, e.y + e.h*0.5);
+      ctx.lineTo(e.x + e.w + 8, e.y + e.h*0.15);
+      ctx.stroke();
+      ctx.fillStyle = '#d4af37';
+      ctx.beginPath();
+      ctx.arc(e.x + e.w + 8, e.y + e.h*0.1, 6, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = 'transparent';
+      ctx.strokeStyle = '#d4af37';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(e.x + e.w + 8, e.y + e.h*0.1, 4, 0, Math.PI*2);
+      ctx.stroke();
+      
+      // power aura when damaged
+      if(e.hp < (variantHp(e))) { 
+        ctx.globalAlpha = 0.12; 
+        ctx.fillStyle = '#ba55d3'; 
+        ctx.beginPath(); 
+        ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*1.2, e.h*1.2, 0, 0, Math.PI*2); 
+        ctx.fill(); 
+      }
       ctx.restore();
     }
 
@@ -317,6 +505,19 @@
     // damage per second when in contact with enemy
     const contactDPS = 20; // HP per second
     function update(dt){
+      // HACK cheat code: H + A + C + K = 100 kills
+      if(keys['h'] && keys['a'] && keys['c'] && keys['k']){
+        if(!hackCheatUsed){
+          killCount += 100;
+          score += 5000;
+          hackCheatUsed = true;
+          tone(1200, 0.3, 'sine', 0.2);
+          tone(1400, 0.3, 'sine', 0.2);
+        }
+      } else {
+        hackCheatUsed = false;
+      }
+      
       // player input
       const left = keys['arrowleft'] || keys['a'];
       const right = keys['arrowright'] || keys['d'];
@@ -384,19 +585,32 @@
         if(e.type==='proj'){
           e.x += e.vx; // hit enemies
           for(let j=entities.length-1;j>=0;j--){ const t=entities[j]; if(t.type==='enemy' && collide(e,t)){
-              // projectile deals 1 hp
+              // projectile damage based on red hair mode
               t.hp = (typeof t.hp === 'number') ? t.hp : 1;
-              t.hp -= 1;
+              if(redHairMode){
+                // Red hair: kills normal enemies instantly, 2 damage to strong/boss
+                if(t.variant === 'normal'){
+                  t.hp = 0; // instant kill
+                } else {
+                  t.hp -= 2; // 2 damage to strong and boss
+                }
+              } else {
+                t.hp -= 1; // normal damage
+              }
               // hit feedback
               tone(440,0.06,'triangle',0.12);
               if(t.hp <= 0){
+                // Track mini game boss kills
+                if(inMiniGame && t.variant === 'boss'){
+                  miniGameBossesKilled += 1;
+                }
                 // Only bosses drop coins — spawn 3 guaranteed coins at boss death
-                if(t.variant === 'boss'){
+                if(t.variant === 'boss' && !inMiniGame){
                   for(let c=0;c<3;c++) spawnPickup(t.x + t.w/2 + (c-1)*10, t.y + t.h/2 + (c%2? -6:4));
                 }
                 // scoring: stronger enemies give more
                 score += (t.variant === 'strong') ? 180 : (t.variant === 'boss' ? 300 : 35);
-                killCount += 1;
+                if(!inMiniGame) killCount += 1;
                 // award per-100 kills
                 while(killCount >= 100){ killCount -= 100; superStock += 3; tone(920,0.18,'sine',0.18); }
                 entities.splice(j,1);
@@ -411,17 +625,30 @@
           // piercing projectile: moves, damages multiple enemies until hitsRemaining or lifespan expires
           e.x += e.vx;
           for(let j=entities.length-1;j>=0;j--){ const t = entities[j]; if(t.type==='enemy' && collide(e,t)){
-              // super deals 3 hp (instant kill for strong)
+              // super damage based on red hair mode
               t.hp = (typeof t.hp === 'number') ? t.hp : 1;
-              t.hp -= 3;
+              if(redHairMode){
+                // Red hair super: instant kill normal, 5 damage to strong/boss
+                if(t.variant === 'normal'){
+                  t.hp = 0;
+                } else {
+                  t.hp -= 5;
+                }
+              } else {
+                t.hp -= 3; // normal super damage
+              }
               tone(720,0.06,'triangle',0.14);
               if(t.hp <= 0){
+                // Track mini game boss kills
+                if(inMiniGame && t.variant === 'boss'){
+                  miniGameBossesKilled += 1;
+                }
                 // Only bosses drop coins — spawn 3 guaranteed coins at boss death
-                if(t.variant === 'boss'){
+                if(t.variant === 'boss' && !inMiniGame){
                   for(let c=0;c<3;c++) spawnPickup(t.x + t.w/2 + (c-1)*10, t.y + t.h/2 + (c%2? -6:4));
                 }
                 score += (t.variant === 'strong') ? 220 : (t.variant === 'boss' ? 500 : 60);
-                killCount += 1;
+                if(!inMiniGame) killCount += 1;
                 while(killCount >= 100){ killCount -= 100; superStock += 3; tone(920,0.18,'sine',0.18); }
                 entities.splice(j,1);
               }
@@ -445,9 +672,37 @@
         }
       }
 
-      // spawn logic (reduced spawn frequency)
-      spawnTimer += dt;
-      if(spawnTimer > 3000){ spawnEnemy(); spawnTimer = 0; }
+      // Mini game trigger at 50 kills
+      if(!miniGameTriggered && killCount >= 50){
+        miniGameTriggered = true;
+        inMiniGame = true;
+        miniGameBossesKilled = 0;
+        miniGameHP = 10;
+        player.hp = 10;
+        entities = []; // clear all enemies
+        // Spawn 5 bosses
+        for(let i=0; i<5; i++){
+          const x = 150 + i * 150;
+          const y = H * 0.5 + (i % 2 === 0 ? -20 : 20);
+          entities.push({type:'enemy', variant:'boss', x:x, y:y, w:48, h:56, vx: (i%2===0?0.8:-0.8), hp:5});
+        }
+        tone(120, 0.5, 'sawtooth', 0.2);
+      }
+      
+      // Check mini game completion
+      if(inMiniGame && miniGameBossesKilled >= 5){
+        inMiniGame = false;
+        redHairMode = true;
+        player.hp = 100;
+        tone(880, 0.8, 'sine', 0.2);
+        tone(1100, 0.8, 'sine', 0.2);
+      }
+      
+      // spawn logic (reduced spawn frequency) - disabled during mini game
+      if(!inMiniGame){
+        spawnTimer += dt;
+        if(spawnTimer > 3000){ spawnEnemy(); spawnTimer = 0; }
+      }
 
       // flight cycle: grant up to flyTimeMax every 30 seconds
       cycleTimer += dt;
@@ -472,6 +727,7 @@
       document.getElementById('score').textContent = 'Score: ' + score;
       document.getElementById('lives').textContent = 'Lives: ' + lives;
       document.getElementById('health').textContent = 'Health: ' + Math.max(0, Math.round(player.hp)) + '%';
+      document.getElementById('kills').textContent = 'Kills: ' + killCount + (killCount >= 50 || miniGameTriggered ? '' : '/50');
       document.getElementById('coins').textContent = 'Coins: ' + coinCount;
       document.getElementById('super').textContent = 'Super: ' + superStock;
       document.getElementById('energy').textContent = 'Energy: ' + Math.round(player.energy) + '%';
@@ -482,14 +738,24 @@
 
       // handle death / life loss
       if(player.hp <= 0){
-        lives = Math.max(0, lives - 1);
-        tone(120,0.28,'sawtooth',0.16);
-        // respawn or game over
-        if(lives > 0){
-          player.hp = 100; player.x = 120; player.y = H-120; entities = []; // clear threats
+        // Mini game failure
+        if(inMiniGame){
+          inMiniGame = false;
+          miniGameBossesKilled = 0;
+          player.hp = 100;
+          entities = [];
+          tone(120, 0.5, 'sawtooth', 0.2);
         } else {
-          // game over - reset everything after brief pause
-          player.hp = 100; score = 0; lives = 3; entities = []; player.x = 120; player.y = H-120;
+          lives = Math.max(0, lives - 1);
+          tone(120,0.28,'sawtooth',0.16);
+          // respawn or game over
+          if(lives > 0){
+            player.hp = 100; player.x = 120; player.y = H-120; entities = []; // clear threats
+          } else {
+            // game over - reset everything after brief pause
+            player.hp = 100; score = 0; lives = 3; entities = []; player.x = 120; player.y = H-120;
+            redHairMode = false; miniGameTriggered = false;
+          }
         }
       }
     }
@@ -514,7 +780,23 @@
           if(e.variant === 'strong') drawStrongEnemy(e);
           else if(e.variant === 'boss') drawBoss(e);
           else drawEnemy(e);
-        } else if(e.type==='pickup') drawPickup(e); else if(e.type==='proj'){ ctx.fillStyle='#ffd86b'; ctx.fillRect(e.x,e.y,e.w,e.h); }
+        } else if(e.type==='pickup') drawPickup(e); 
+        else if(e.type==='proj'){ 
+          ctx.fillStyle = redHairMode ? '#ff4757' : '#ffd86b'; 
+          ctx.fillRect(e.x,e.y,e.w,e.h); 
+          if(redHairMode){
+            ctx.fillStyle = 'rgba(255,71,87,0.3)';
+            ctx.fillRect(e.x-2, e.y-2, e.w+4, e.h+4);
+          }
+        }
+        else if(e.type==='super'){
+          ctx.fillStyle = redHairMode ? '#ff1744' : '#ff6b35';
+          ctx.fillRect(e.x,e.y,e.w,e.h);
+          if(redHairMode){
+            ctx.fillStyle = 'rgba(255,23,68,0.4)';
+            ctx.fillRect(e.x-4, e.y-4, e.w+8, e.h+8);
+          }
+        }
       });
 
       // draw player
@@ -523,6 +805,21 @@
       // simple UI overlay
       ctx.fillStyle = 'rgba(0,0,0,0.12)'; ctx.fillRect(12,12,200,36);
       ctx.fillStyle = '#fff'; ctx.font = '14px Arial'; ctx.fillText('Energy Fighter Prototype',20,36);
+      
+      // Mini game status
+      if(inMiniGame){
+        ctx.fillStyle = 'rgba(255,0,0,0.3)'; ctx.fillRect(W/2 - 150, 20, 300, 50);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 18px Arial';
+        ctx.fillText('MINI GAME: Defeat 5 Beeruses!', W/2 - 130, 45);
+        ctx.fillText('Bosses: ' + miniGameBossesKilled + '/5', W/2 - 50, 65);
+      }
+      
+      // Red hair mode indicator
+      if(redHairMode){
+        ctx.fillStyle = 'rgba(230,57,70,0.2)'; ctx.fillRect(W - 220, 12, 200, 36);
+        ctx.fillStyle = '#e63946'; ctx.font = 'bold 16px Arial';
+        ctx.fillText('🔥 RED HAIR MODE', W - 210, 36);
+      }
 
       // flash overlay when board-clear used
       if(flashTimer > 0){
