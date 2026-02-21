@@ -43,7 +43,7 @@
     </div>
 
     <div class="controls">
-      Controls: Move = Arrow keys or A/D, Jump = W / Up, Attack = Z, Energy Blast = X (charge to increase power).<br>
+      Controls: Move = Arrow keys, Jump = Up, Attack = Z, Energy Blast = X (charge to increase power).<br>
       This prototype includes enemies, pickups, scoring, and simple sound effects. <strong>Reach 50 kills to unlock a mini game!</strong>
     </div>
   </div>
@@ -71,6 +71,7 @@
     let score = 0, lives = 3;
     let coinCount = 0;
     let killCount = 0;
+    let killMilestone = 0;
     let superStock = 0; // granted by kill milestones (3 per 100 kills)
     let lastTime = 0;
     let entities = []; // enemies and pickups
@@ -78,12 +79,29 @@
     // Mini game and transformation
     let miniGameTriggered = false;
     let inMiniGame = false;
-    let redHairMode = false;
+    let godMode = false;
     let miniGameBossesKilled = 0;
     let miniGameHP = 10;
+    let retryPending = null; // 'god' or 'ultra'
+    
+    // Ultra Mode
+    let ultraModeTriggered = false;
+    let inUltraMiniGame = false;
+    let ultraMode = false;
+    let ultraGameJirenKilled = false;
+    let ultraMiniGameHP = 10;
+    let ultraReady = false;
+
+    // Jiren unlock/summon
+    let jirenUnlocked = false;
+    let jirenSummonCooldown = 0;
+    let jirenSpawnUsed = false;
     
     // Cheat code tracking
     let hackCheatUsed = false;
+    let hackOneCheatUsed = false;
+    let flyCheatUsed = false;
+    let infiniteFly = false;
 
     // Player
     const player = {
@@ -99,6 +117,15 @@
 
     // Utility
     function rand(min,max){return Math.random()*(max-min)+min}
+    function addKills(count){
+      killCount += count;
+      killMilestone += count;
+      while(killMilestone >= 100){
+        killMilestone -= 100;
+        superStock += 3;
+        tone(920,0.18,'sine',0.18);
+      }
+    }
 
     // Visual elements: clouds and boulders
     const clouds = [];
@@ -134,12 +161,40 @@
       entities.push(p);
     }
 
+    function startGodMiniGame(){
+      miniGameTriggered = true;
+      inMiniGame = true;
+      retryPending = null;
+      miniGameBossesKilled = 0;
+      player.hp = 10;
+      entities = []; // clear all enemies
+      // Spawn 5 bosses
+      for(let i=0; i<5; i++){
+        const x = 150 + i * 150;
+        const y = H * 0.5 + (i % 2 === 0 ? -20 : 20);
+        entities.push({type:'enemy', variant:'boss', x:x, y:y, w:48, h:56, vx: (i%2===0?0.8:-0.8), hp:5});
+      }
+      tone(120, 0.5, 'sawtooth', 0.2);
+    }
+
+    function startUltraMiniGame(){
+      ultraModeTriggered = true;
+      inUltraMiniGame = true;
+      retryPending = null;
+      ultraGameJirenKilled = false;
+      player.hp = 10;
+      entities = []; // clear all enemies
+      // Spawn 1 Jiren (use boss variant but mark as jiren)
+      entities.push({type:'enemy', variant:'jiren', x: W/2, y: H*0.4, w:48, h:56, vx: 0.5, hp:10});
+      tone(120, 0.5, 'sawtooth', 0.2);
+    }
+
     // Input
     window.addEventListener('keydown', e=>{ 
       keys[e.key.toLowerCase()] = true; 
       if(e.key===' '){ e.preventDefault(); }
-      // jump on Up/W (allow mid-air if flyTime available)
-      if(e.key === 'ArrowUp' || e.key.toLowerCase() === 'w'){
+      // jump on Up (allow mid-air if flyTime available)
+      if(e.key === 'ArrowUp'){
         if(player.onGround || player.flyTime > 0){
           player.vy = -12; player.onGround = false; tone(300,0.06,'sine',0.06);
           if(!player.onGround) player.flyTime = Math.max(0, player.flyTime - 120);
@@ -164,12 +219,10 @@
               entities.splice(i,1);
               removed += 1;
               score += 60;
-              killCount += 1;
+              if(!inMiniGame && !inUltraMiniGame) addKills(1);
             }
           }
           superStock = Math.max(0, superStock - 5);
-          // award per-100 kills
-          while(killCount >= 100){ killCount -= 100; superStock += 3; tone(920,0.18,'sine',0.18); }
           // feedback
           tone(80,0.5,'sawtooth',0.18);
           flashTimer = 400;
@@ -188,9 +241,15 @@
       player.energy = 0; player.flyTime = player.flyTimeMax;
       cycleTimer = 0;
       entities = [];
-      coinCount = 0; killCount = 0; superStock = 0;
-      miniGameTriggered = false; inMiniGame = false; redHairMode = false;
+      coinCount = 0; killCount = 0; killMilestone = 0; superStock = 0;
+      miniGameTriggered = false; inMiniGame = false; godMode = false;
       miniGameBossesKilled = 0;
+      ultraModeTriggered = false; inUltraMiniGame = false; ultraMode = false;
+      ultraGameJirenKilled = false;
+      retryPending = null;
+      infiniteFly = false;
+      jirenUnlocked = false;
+      jirenSummonCooldown = 0;
     }
 
     // Simple rectangle collision
@@ -221,7 +280,7 @@
       ctx.fillStyle = '#f1d2b0'; ctx.beginPath(); ctx.ellipse(p.x+p.w/2, p.y+10, 12, 12, 0, 0, Math.PI*2); ctx.fill();
 
       // spiky hair (stylized, original) - red when transformed
-      ctx.fillStyle = redHairMode ? '#e63946' : '#0b0b0b'; 
+      ctx.fillStyle = (ultraMode ? '#c0c0c0' : (godMode ? '#e63946' : '#0b0b0b')); 
       ctx.beginPath();
       ctx.moveTo(p.x + p.w/2, p.y - 8);
       ctx.lineTo(p.x + p.w - 2, p.y + 6);
@@ -231,10 +290,10 @@
       ctx.lineTo(p.x + 2, p.y + 8);
       ctx.closePath(); ctx.fill();
       
-      // red hair aura
-      if(redHairMode){
+      // god/ultra mode aura
+      if(godMode || ultraMode){
         ctx.globalAlpha = 0.15;
-        ctx.fillStyle = '#ff4757';
+        ctx.fillStyle = ultraMode ? '#e0e0e0' : '#ff4757';
         ctx.beginPath();
         ctx.ellipse(p.x + p.w/2, p.y + 5, 20, 18, 0, 0, Math.PI*2);
         ctx.fill();
@@ -247,44 +306,94 @@
       ctx.restore();
     }
 
-    // Draw enemy (original, Freeza-inspired alien - original art, not a copy)
+    // Draw enemy (Frieza-inspired alien - original art)
     function drawEnemy(e){
-      // tail / sweep behind
       ctx.save();
-      ctx.strokeStyle = '#5a2a8c'; ctx.lineWidth = Math.max(4, e.w * 0.12);
+      
+      // tail (curved, white with purple tip)
+      ctx.strokeStyle = '#c0c0c0'; ctx.lineWidth = 6;
       ctx.beginPath();
-      ctx.moveTo(e.x + e.w/2, e.y + e.h - 6);
-      ctx.quadraticCurveTo(e.x + e.w + 18, e.y + e.h/2, e.x + e.w/2, e.y + e.h/2 - 8);
+      ctx.moveTo(e.x + e.w/2, e.y + e.h - 10);
+      ctx.quadraticCurveTo(e.x + e.w + 25, e.y + e.h/2, e.x + e.w - 8, e.y + e.h*0.3);
       ctx.stroke();
-      ctx.restore();
-
-      // pale body
-      ctx.fillStyle = '#f7efe9';
+      // purple tail tip
+      ctx.strokeStyle = '#8b3a9a'; ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*0.45, e.h*0.6, 0, 0, Math.PI*2);
+      ctx.moveTo(e.x + e.w - 8, e.y + e.h*0.3);
+      ctx.quadraticCurveTo(e.x + e.w + 18, e.y + e.h*0.2, e.x + e.w + 12, e.y + e.h*0.1);
+      ctx.stroke();
+      
+      // white body (torso)
+      ctx.fillStyle = '#e8e8e8';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.5, e.w*0.46, e.h*0.52, 0, 0, Math.PI*2);
       ctx.fill();
-
-      // purple chest plate
-      ctx.fillStyle = '#7a2be2';
-      ctx.fillRect(e.x + e.w*0.2, e.y + e.h*0.48, e.w*0.6, e.h*0.12);
-
-      // head crest
-      ctx.fillStyle = '#6a1abf';
+      
+      // purple chest armor (diamond shaped)
+      ctx.fillStyle = '#7a3e99';
       ctx.beginPath();
-      ctx.moveTo(e.x + e.w*0.2, e.y + e.h*0.18);
-      ctx.quadraticCurveTo(e.x + e.w/2, e.y - e.h*0.08, e.x + e.w*0.8, e.y + e.h*0.18);
-      ctx.lineTo(e.x + e.w*0.8, e.y + e.h*0.34);
-      ctx.lineTo(e.x + e.w*0.2, e.y + e.h*0.34);
-      ctx.closePath(); ctx.fill();
-
-      // eyes
-      ctx.fillStyle = '#111';
-      ctx.fillRect(e.x + e.w*0.32, e.y + e.h*0.26, e.w*0.12, e.h*0.06);
-      ctx.fillRect(e.x + e.w*0.56, e.y + e.h*0.26, e.w*0.12, e.h*0.06);
-
-      // mouth line
-      ctx.strokeStyle = '#3b2b2b'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(e.x + e.w*0.4, e.y + e.h*0.38); ctx.lineTo(e.x + e.w*0.6, e.y + e.h*0.38); ctx.stroke();
+      ctx.moveTo(e.x + e.w/2, e.y + e.h*0.35);
+      ctx.lineTo(e.x + e.w*0.7, e.y + e.h*0.55);
+      ctx.lineTo(e.x + e.w/2, e.y + e.h*0.68);
+      ctx.lineTo(e.x + e.w*0.3, e.y + e.h*0.55);
+      ctx.closePath();
+      ctx.fill();
+      
+      // purple shoulder pauldrons
+      ctx.fillStyle = '#6a2d99';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.15, e.y + e.h*0.46, e.w*0.16, e.h*0.2, -0.4, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.85, e.y + e.h*0.46, e.w*0.16, e.h*0.2, 0.4, 0, Math.PI*2);
+      ctx.fill();
+      
+      // white gloved hands
+      ctx.fillStyle = '#f5f5f5';
+      ctx.beginPath();
+      ctx.ellipse(e.x - 8, e.y + e.h*0.48, 7, 10, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w + 8, e.y + e.h*0.48, 7, 10, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // purple leg armor
+      ctx.fillStyle = '#8b3a9a';
+      ctx.fillRect(e.x + e.w*0.22, e.y + e.h*0.68, e.w*0.28, e.h*0.28);
+      ctx.fillRect(e.x + e.w*0.5, e.y + e.h*0.68, e.w*0.28, e.h*0.28);
+      
+      // white under-legs
+      ctx.fillStyle = '#e8e8e8';
+      ctx.fillRect(e.x + e.w*0.22, e.y + e.h*0.8, e.w*0.28, e.h*0.2);
+      ctx.fillRect(e.x + e.w*0.5, e.y + e.h*0.8, e.w*0.28, e.h*0.2);
+      
+      // distinctive head (dome-shaped purple)
+      ctx.fillStyle = '#6a2d99';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.24, e.w*0.32, e.h*0.24, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // head highlight (dome shine)
+      ctx.fillStyle = '#9b5bb8';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2 - 4, e.y + e.h*0.14, e.w*0.15, e.h*0.12, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // large purple eyes
+      ctx.fillStyle = '#4a1a7a';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.36, e.y + e.h*0.2, e.w*0.09, e.h*0.08, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.64, e.y + e.h*0.2, e.w*0.09, e.h*0.08, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // eye shine
+      ctx.fillStyle = '#000';
+      ctx.fillRect(e.x + e.w*0.35, e.y + e.h*0.18, e.w*0.035, e.h*0.05);
+      ctx.fillRect(e.x + e.w*0.63, e.y + e.h*0.18, e.w*0.035, e.h*0.05);
+      
+      ctx.restore();
     }
 
     // Draw strong enemy (Cell-inspired insectoid — original art)
@@ -493,10 +602,129 @@
       ctx.restore();
     }
 
-    function variantHp(e){ return e.variant === 'boss' ? 5 : (e.variant === 'strong' ? 3 : 1); }
+    // Draw Jiren enemy
+    function drawJiren(e){
+      ctx.save();
+      
+      // white gloved hands
+      ctx.fillStyle = '#e8e8e8';
+      ctx.beginPath();
+      ctx.ellipse(e.x - 10, e.y + e.h*0.48, 8, 12, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w + 10, e.y + e.h*0.48, 8, 12, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // dark grey pants/legs
+      ctx.fillStyle = '#3a3a3a';
+      ctx.fillRect(e.x + e.w*0.18, e.y + e.h*0.6, e.w*0.3, e.h*0.4);
+      ctx.fillRect(e.x + e.w*0.52, e.y + e.h*0.6, e.w*0.3, e.h*0.4);
+      
+      // white feet/boots
+      ctx.fillStyle = '#e8e8e8';
+      ctx.fillRect(e.x + e.w*0.18, e.y + e.h*0.92, e.w*0.3, e.h*0.08);
+      ctx.fillRect(e.x + e.w*0.52, e.y + e.h*0.92, e.w*0.3, e.h*0.08);
+      
+      // dark grey/black body
+      ctx.fillStyle = '#4a4a4a';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.5, e.w*0.46, e.h*0.45, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // red and black chest armor (angular, V-shaped)
+      ctx.fillStyle = '#d63031';
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w/2, e.y + e.h*0.32);
+      ctx.lineTo(e.x + e.w*0.75, e.y + e.h*0.55);
+      ctx.lineTo(e.x + e.w/2, e.y + e.h*0.58);
+      ctx.lineTo(e.x + e.w*0.25, e.y + e.h*0.55);
+      ctx.closePath();
+      ctx.fill();
+      
+      // black chest stripe down the middle
+      ctx.fillStyle = '#2d2d2d';
+      ctx.fillRect(e.x + e.w*0.48, e.y + e.h*0.32, e.w*0.04, e.h*0.26);
+      
+      // red shoulder armor
+      ctx.fillStyle = '#d63031';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.12, e.y + e.h*0.42, e.w*0.15, e.h*0.18, -0.35, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.88, e.y + e.h*0.42, e.w*0.15, e.h*0.18, 0.35, 0, Math.PI*2);
+      ctx.fill();
+      
+      // black upper arm bands
+      ctx.fillStyle = '#2d2d2d';
+      ctx.fillRect(e.x - 12, e.y + e.h*0.38, 10, 16);
+      ctx.fillRect(e.x + e.w + 2, e.y + e.h*0.38, 10, 16);
+      
+      // grey/white head
+      ctx.fillStyle = '#c0c0c0';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.22, e.w*0.32, e.h*0.22, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // bald appearance with shine
+      ctx.fillStyle = '#e0e0e0';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2 - 3, e.y + e.h*0.12, e.w*0.18, e.h*0.14, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // dark intense eyes
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.38, e.y + e.h*0.21, e.w*0.09, e.h*0.07, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.62, e.y + e.h*0.21, e.w*0.09, e.h*0.07, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // eye whites
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(e.x + e.w*0.37, e.y + e.h*0.2, e.w*0.035, e.h*0.05);
+      ctx.fillRect(e.x + e.w*0.625, e.y + e.h*0.2, e.w*0.035, e.h*0.05);
+      
+      // powerful aura when at higher HP
+      if(e.hp > 5){
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = '#ff6b6b';
+        ctx.beginPath();
+        ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*1.15, e.h*1.15, 0, 0, Math.PI*2);
+        ctx.fill();
+      }
+      
+      ctx.restore();
+    }
+
+    function variantHp(e){ return e.variant === 'jiren' ? 5 : (e.variant === 'boss' ? 5 : (e.variant === 'strong' ? 3 : 1)); }
 
     // Draw pickup
-    function drawPickup(p){ ctx.fillStyle='#ffd86b'; ctx.beginPath(); ctx.arc(p.x+p.w/2, p.y+p.h/2, p.w/2,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#000'; ctx.fillRect(p.x+p.w/2-2, p.y+p.h/2-8,4,10); }
+    function drawPickup(p){
+      // Dragon ball coin
+      const cx = p.x + p.w/2;
+      const cy = p.y + p.h/2;
+      const r = p.w/2;
+      ctx.fillStyle = '#ffb347';
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+      // shine
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.beginPath(); ctx.ellipse(cx - r*0.25, cy - r*0.25, r*0.35, r*0.22, -0.4, 0, Math.PI*2); ctx.fill();
+      // star
+      ctx.fillStyle = '#d61f1f';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r*0.45);
+      ctx.lineTo(cx + r*0.14, cy - r*0.05);
+      ctx.lineTo(cx + r*0.45, cy - r*0.05);
+      ctx.lineTo(cx + r*0.2, cy + r*0.1);
+      ctx.lineTo(cx + r*0.3, cy + r*0.45);
+      ctx.lineTo(cx, cy + r*0.2);
+      ctx.lineTo(cx - r*0.3, cy + r*0.45);
+      ctx.lineTo(cx - r*0.2, cy + r*0.1);
+      ctx.lineTo(cx - r*0.45, cy - r*0.05);
+      ctx.lineTo(cx - r*0.14, cy - r*0.05);
+      ctx.closePath(); ctx.fill();
+    }
 
     // Update loop
     let spawnTimer = 0;
@@ -505,23 +733,72 @@
     // damage per second when in contact with enemy
     const contactDPS = 20; // HP per second
     function update(dt){
-      // HACK cheat code: H + A + C + K = 100 kills
-      if(keys['h'] && keys['a'] && keys['c'] && keys['k']){
+      // H A C K 1 cheat code (takes priority): unlock Ultra Mode instantly
+      if(keys['h'] && keys['a'] && keys['c'] && keys['k'] && keys['1']){
+        if(!hackOneCheatUsed){
+          ultraMode = true;
+          godMode = true;
+          ultraModeTriggered = true;
+          score += 10000;
+          player.hp = 100;
+          hackOneCheatUsed = true;
+          tone(1400, 0.3, 'sine', 0.2);
+          tone(1600, 0.3, 'sine', 0.2);
+          tone(1800, 0.3, 'sine', 0.2);
+        }
+      } else if(!(keys['h'] && keys['a'] && keys['c'] && keys['k'] && keys['1'])){
+        hackOneCheatUsed = false;
+      }
+      
+      // HACK cheat code: H + A + C + K = 50 kills
+      if(keys['h'] && keys['a'] && keys['c'] && keys['k'] && !keys['1']){
         if(!hackCheatUsed){
-          killCount += 100;
+          addKills(50);
           score += 5000;
           hackCheatUsed = true;
           tone(1200, 0.3, 'sine', 0.2);
           tone(1400, 0.3, 'sine', 0.2);
         }
-      } else {
+      } else if(!(keys['h'] && keys['a'] && keys['c'] && keys['k'])){
         hackCheatUsed = false;
+      }
+
+      // FLY cheat code: F + L + Y = infinite fly time
+      if(keys['f'] && keys['l'] && keys['y']){
+        if(!flyCheatUsed){
+          infiniteFly = true;
+          player.flyTime = player.flyTimeMax;
+          flyCheatUsed = true;
+          tone(980, 0.2, 'sine', 0.16);
+        }
+      } else if(!(keys['f'] && keys['l'] && keys['y'])){
+        flyCheatUsed = false;
+      }
+
+      if(jirenSummonCooldown > 0){
+        jirenSummonCooldown = Math.max(0, jirenSummonCooldown - dt);
+      }
+
+      // Jiren summon: press J when unlocked
+      if(jirenUnlocked && keys['j'] && jirenSummonCooldown <= 0){
+        entities.push({type:'ally', variant:'jiren', x: player.x + 60, y: player.y, w:48, h:56, vx:0, created: Date.now(), lifespan: 8000, lastHit: 0});
+        jirenSummonCooldown = 12000;
+        tone(760, 0.2, 'sine', 0.18);
+      }
+
+      // retry mini games with START (Enter)
+      if(retryPending && keys['enter']){
+        if(retryPending === 'god'){
+          startGodMiniGame();
+        } else if(retryPending === 'ultra'){
+          startUltraMiniGame();
+        }
       }
       
       // player input
-      const left = keys['arrowleft'] || keys['a'];
-      const right = keys['arrowright'] || keys['d'];
-      const up = keys['arrowup'] || keys['w'];
+      const left = keys['arrowleft'];
+      const right = keys['arrowright'];
+      const up = keys['arrowup'];
       const attack = keys['z'];
       const blast = keys['x'];
 
@@ -564,6 +841,49 @@
 
       // update entities
       for(let i = entities.length-1; i>=0; i--){ const e = entities[i];
+        if(e.type==='ally'){
+          // follow the player loosely
+          const targetX = player.x + (player.facing > 0 ? 60 : -60);
+          const targetY = player.y - 6;
+          e.x += (targetX - e.x) * 0.08;
+          e.y += (targetY - e.y) * 0.08;
+
+          // damage enemies on contact with a short cooldown
+          for(let j = entities.length-1; j>=0; j--){ const t = entities[j];
+            if(t.type === 'enemy' && collide(e,t)){
+              const now = Date.now();
+              if(now - (e.lastHit || 0) > 280){
+                t.hp = (typeof t.hp === 'number') ? t.hp : 1;
+                t.hp -= 1;
+                e.lastHit = now;
+                tone(520,0.05,'triangle',0.08);
+                if(t.hp <= 0){
+                  if(inMiniGame && t.variant === 'boss'){
+                    miniGameBossesKilled += 1;
+                  }
+                  if(inUltraMiniGame && t.variant === 'jiren'){
+                    ultraGameJirenKilled = true;
+                    jirenUnlocked = true;
+                  }
+                  if(t.variant === 'boss' && !inMiniGame){
+                    for(let c=0;c<3;c++) spawnPickup(t.x + t.w/2 + (c-1)*10, t.y + t.h/2 + (c%2? -6:4));
+                  }
+                  if(t.variant === 'jiren' && !inUltraMiniGame){
+                    for(let c=0;c<7;c++) spawnPickup(t.x + t.w/2 + (c-3)*8, t.y + t.h/2 + (c%2? -6:4));
+                  }
+                  score += (t.variant === 'strong') ? 180 : (t.variant === 'boss' ? 300 : 35);
+                  if(!inMiniGame && !inUltraMiniGame) addKills(1);
+                  entities.splice(j,1);
+                }
+              }
+            }
+          }
+
+          if(Date.now() - e.created > (e.lifespan || 8000)){
+            entities.splice(i,1);
+          }
+          continue;
+        }
         if(e.type==='enemy'){
           e.x += e.vx;
           // if enemy touches player, drain health over time
@@ -574,8 +894,8 @@
             tone(220, 0.04, 'sine', 0.06);
           }
           if(Math.abs(e.x - player.x) < 10 && Math.random() < 0.004){ /* occasional random move */ }
-          // strong and boss types stay on-screen and bounce at edges
-          if(e.variant === 'strong' || e.variant === 'boss'){
+          // strong, boss, and jiren types stay on-screen and bounce at edges
+          if(e.variant === 'strong' || e.variant === 'boss' || e.variant === 'jiren'){
             if(e.x < 20){ e.x = 20; e.vx = Math.abs(e.vx); }
             if(e.x + e.w > W - 20){ e.x = W - 20 - e.w; e.vx = -Math.abs(e.vx); }
           } else {
@@ -585,10 +905,19 @@
         if(e.type==='proj'){
           e.x += e.vx; // hit enemies
           for(let j=entities.length-1;j>=0;j--){ const t=entities[j]; if(t.type==='enemy' && collide(e,t)){
-              // projectile damage based on red hair mode
+              // projectile damage based on god/ultra mode
               t.hp = (typeof t.hp === 'number') ? t.hp : 1;
-              if(redHairMode){
-                // Red hair: kills normal enemies instantly, 2 damage to strong/boss
+              if(t.variant === 'jiren' && inUltraMiniGame && !ultraMode){
+                t.hp -= 1; // requires 10 blasts in the Jiren mini game
+              } else if(ultraMode){
+                // Ultra Mode: instant kill normal/strong, 5 damage to boss/jiren
+                if(t.variant === 'normal' || t.variant === 'strong'){
+                  t.hp = 0; // instant kill
+                } else {
+                  t.hp -= 5; // 5 damage to bosses and jiren
+                }
+              } else if(godMode){
+                // God Mode: kills normal enemies instantly, 2 damage to strong/boss
                 if(t.variant === 'normal'){
                   t.hp = 0; // instant kill
                 } else {
@@ -604,15 +933,23 @@
                 if(inMiniGame && t.variant === 'boss'){
                   miniGameBossesKilled += 1;
                 }
+                if(inUltraMiniGame && t.variant === 'jiren'){
+                  ultraGameJirenKilled = true;
+                  jirenUnlocked = true;
+                }
                 // Only bosses drop coins — spawn 3 guaranteed coins at boss death
                 if(t.variant === 'boss' && !inMiniGame){
                   for(let c=0;c<3;c++) spawnPickup(t.x + t.w/2 + (c-1)*10, t.y + t.h/2 + (c%2? -6:4));
                 }
+                if(t.variant === 'jiren' && !inUltraMiniGame){
+                  for(let c=0;c<7;c++) spawnPickup(t.x + t.w/2 + (c-3)*8, t.y + t.h/2 + (c%2? -6:4));
+                }
+                if(t.variant === 'jiren' && !inUltraMiniGame){
+                  for(let c=0;c<7;c++) spawnPickup(t.x + t.w/2 + (c-3)*8, t.y + t.h/2 + (c%2? -6:4));
+                }
                 // scoring: stronger enemies give more
                 score += (t.variant === 'strong') ? 180 : (t.variant === 'boss' ? 300 : 35);
-                if(!inMiniGame) killCount += 1;
-                // award per-100 kills
-                while(killCount >= 100){ killCount -= 100; superStock += 3; tone(920,0.18,'sine',0.18); }
+                if(!inMiniGame && !inUltraMiniGame) addKills(1);
                 entities.splice(j,1);
               }
               // remove projectile after hit
@@ -625,10 +962,19 @@
           // piercing projectile: moves, damages multiple enemies until hitsRemaining or lifespan expires
           e.x += e.vx;
           for(let j=entities.length-1;j>=0;j--){ const t = entities[j]; if(t.type==='enemy' && collide(e,t)){
-              // super damage based on red hair mode
+              // super damage based on god/ultra mode
               t.hp = (typeof t.hp === 'number') ? t.hp : 1;
-              if(redHairMode){
-                // Red hair super: instant kill normal, 5 damage to strong/boss
+              if(t.variant === 'jiren' && inUltraMiniGame && !ultraMode){
+                t.hp -= 1; // requires 10 blasts in the Jiren mini game
+              } else if(ultraMode){
+                // Ultra Mode super: instant kill normal/strong, 5 damage to bosses/jiren
+                if(t.variant === 'normal' || t.variant === 'strong'){
+                  t.hp = 0;
+                } else {
+                  t.hp -= 5;
+                }
+              } else if(godMode){
+                // God Mode super: instant kill normal, 5 damage to strong/boss
                 if(t.variant === 'normal'){
                   t.hp = 0;
                 } else {
@@ -643,13 +989,16 @@
                 if(inMiniGame && t.variant === 'boss'){
                   miniGameBossesKilled += 1;
                 }
+                if(inUltraMiniGame && t.variant === 'jiren'){
+                  ultraGameJirenKilled = true;
+                  jirenUnlocked = true;
+                }
                 // Only bosses drop coins — spawn 3 guaranteed coins at boss death
                 if(t.variant === 'boss' && !inMiniGame){
                   for(let c=0;c<3;c++) spawnPickup(t.x + t.w/2 + (c-1)*10, t.y + t.h/2 + (c%2? -6:4));
                 }
                 score += (t.variant === 'strong') ? 220 : (t.variant === 'boss' ? 500 : 60);
-                if(!inMiniGame) killCount += 1;
-                while(killCount >= 100){ killCount -= 100; superStock += 3; tone(920,0.18,'sine',0.18); }
+                if(!inMiniGame && !inUltraMiniGame) addKills(1);
                 entities.splice(j,1);
               }
               e.hitsRemaining = (typeof e.hitsRemaining === 'number') ? e.hitsRemaining - 1 : 0;
@@ -672,34 +1021,52 @@
         }
       }
 
-      // Mini game trigger at 50 kills
-      if(!miniGameTriggered && killCount >= 50){
-        miniGameTriggered = true;
-        inMiniGame = true;
-        miniGameBossesKilled = 0;
-        miniGameHP = 10;
-        player.hp = 10;
-        entities = []; // clear all enemies
-        // Spawn 5 bosses
-        for(let i=0; i<5; i++){
-          const x = 150 + i * 150;
-          const y = H * 0.5 + (i % 2 === 0 ? -20 : 20);
-          entities.push({type:'enemy', variant:'boss', x:x, y:y, w:48, h:56, vx: (i%2===0?0.8:-0.8), hp:5});
-        }
-        tone(120, 0.5, 'sawtooth', 0.2);
+      // God mini game trigger at 50 kills
+      if(!miniGameTriggered && killCount >= 50 && !inMiniGame && !retryPending){
+        startGodMiniGame();
       }
-      
-      // Check mini game completion
+
+      // Check god mini game completion
       if(inMiniGame && miniGameBossesKilled >= 5){
         inMiniGame = false;
-        redHairMode = true;
+        godMode = true;
         player.hp = 100;
         tone(880, 0.8, 'sine', 0.2);
         tone(1100, 0.8, 'sine', 0.2);
       }
+
+      // Ultra Mode trigger at 100 kills (only if God Mode unlocked)
+      ultraReady = (killCount >= 100 && godMode && !inUltraMiniGame && !retryPending && !ultraMode);
+      if(ultraReady && !ultraModeTriggered){
+        startUltraMiniGame();
+      }
+      // manual Jiren spawn (press U) outside mini games
+      if(keys['u'] && !inUltraMiniGame && !inMiniGame && !retryPending){
+        if(!jirenSpawnUsed){
+          const hasJiren = entities.some(ent => ent.type === 'enemy' && ent.variant === 'jiren');
+          if(!hasJiren){
+            entities.push({type:'enemy', variant:'jiren', x: W/2, y: H*0.4, w:48, h:56, vx: 0.5, hp:5});
+            tone(640, 0.2, 'sine', 0.16);
+          }
+          jirenSpawnUsed = true;
+        }
+      } else if(!keys['u']){
+        jirenSpawnUsed = false;
+      }
       
-      // spawn logic (reduced spawn frequency) - disabled during mini game
-      if(!inMiniGame){
+      // Check ultra mode mini game completion
+      if(inUltraMiniGame && ultraGameJirenKilled){
+        inUltraMiniGame = false;
+        ultraMode = true;
+        godMode = true; // keep god powers too
+        player.hp = 100;
+        tone(880, 0.8, 'sine', 0.2);
+        tone(1100, 0.8, 'sine', 0.2);
+        tone(1320, 0.8, 'sine', 0.2);
+      }
+      
+      // spawn logic (reduced spawn frequency) - disabled during mini games
+      if(!inMiniGame && !inUltraMiniGame){
         spawnTimer += dt;
         if(spawnTimer > 3000){ spawnEnemy(); spawnTimer = 0; }
       }
@@ -711,12 +1078,18 @@
         player.flyTime = player.flyTimeMax;
       }
 
+      if(infiniteFly){
+        player.flyTime = player.flyTimeMax;
+      }
+
       // flying: hold up to ascend while you have flyTime remaining
-      const upHeld = keys['arrowup'] || keys['w'];
+      const upHeld = keys['arrowup'];
       if(upHeld && player.flyTime > 0){
         // provide lift
         player.vy = Math.max(player.vy - 0.9, -6);
-        player.flyTime = Math.max(0, player.flyTime - dt);
+        if(!infiniteFly){
+          player.flyTime = Math.max(0, player.flyTime - dt);
+        }
       }
       // no recharge: fly time depletes until exhausted
 
@@ -738,12 +1111,22 @@
 
       // handle death / life loss
       if(player.hp <= 0){
+        // Ultra mini game failure
+        if(inUltraMiniGame){
+          inUltraMiniGame = false;
+          ultraGameJirenKilled = false;
+          player.hp = 100;
+          entities = [];
+          retryPending = 'ultra';
+          tone(120, 0.5, 'sawtooth', 0.2);
+        }
         // Mini game failure
-        if(inMiniGame){
+        else if(inMiniGame){
           inMiniGame = false;
           miniGameBossesKilled = 0;
           player.hp = 100;
           entities = [];
+          retryPending = 'god';
           tone(120, 0.5, 'sawtooth', 0.2);
         } else {
           lives = Math.max(0, lives - 1);
@@ -754,7 +1137,7 @@
           } else {
             // game over - reset everything after brief pause
             player.hp = 100; score = 0; lives = 3; entities = []; player.x = 120; player.y = H-120;
-            redHairMode = false; miniGameTriggered = false;
+            godMode = false; miniGameTriggered = false; ultraMode = false; ultraModeTriggered = false;
           }
         }
       }
@@ -778,22 +1161,28 @@
       entities.forEach(e=>{ 
         if(e.type==='enemy'){
           if(e.variant === 'strong') drawStrongEnemy(e);
+          else if(e.variant === 'jiren') drawJiren(e);
           else if(e.variant === 'boss') drawBoss(e);
           else drawEnemy(e);
+        } else if(e.type==='ally'){
+          ctx.save();
+          ctx.globalAlpha = 0.85;
+          drawJiren(e);
+          ctx.restore();
         } else if(e.type==='pickup') drawPickup(e); 
         else if(e.type==='proj'){ 
-          ctx.fillStyle = redHairMode ? '#ff4757' : '#ffd86b'; 
+          ctx.fillStyle = ultraMode ? '#c0c0c0' : (godMode ? '#ff4757' : '#ffd86b'); 
           ctx.fillRect(e.x,e.y,e.w,e.h); 
-          if(redHairMode){
-            ctx.fillStyle = 'rgba(255,71,87,0.3)';
+          if(ultraMode || godMode){
+            ctx.fillStyle = ultraMode ? 'rgba(192,192,192,0.3)' : 'rgba(255,71,87,0.3)';
             ctx.fillRect(e.x-2, e.y-2, e.w+4, e.h+4);
           }
         }
         else if(e.type==='super'){
-          ctx.fillStyle = redHairMode ? '#ff1744' : '#ff6b35';
+          ctx.fillStyle = ultraMode ? '#e0e0e0' : (godMode ? '#ff1744' : '#ff6b35');
           ctx.fillRect(e.x,e.y,e.w,e.h);
-          if(redHairMode){
-            ctx.fillStyle = 'rgba(255,23,68,0.4)';
+          if(ultraMode || godMode){
+            ctx.fillStyle = ultraMode ? 'rgba(224,224,224,0.4)' : 'rgba(255,23,68,0.4)';
             ctx.fillRect(e.x-4, e.y-4, e.w+8, e.h+8);
           }
         }
@@ -814,11 +1203,45 @@
         ctx.fillText('Bosses: ' + miniGameBossesKilled + '/5', W/2 - 50, 65);
       }
       
-      // Red hair mode indicator
-      if(redHairMode){
+      // Ultra mini game status
+      if(inUltraMiniGame){
+        ctx.fillStyle = 'rgba(192,192,192,0.3)'; ctx.fillRect(W/2 - 130, 20, 260, 50);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 18px Arial';
+        ctx.fillText('ULTRA GAME: Defeat Jiren!', W/2 - 110, 45);
+        ctx.fillText('HP: ' + Math.max(0, Math.round(player.hp)), W/2 - 30, 65);
+      }
+
+      if(retryPending){
+        ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(W/2 - 160, 80, 320, 44);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Arial';
+        const label = retryPending === 'ultra' ? 'ULTRA' : 'GOD';
+        ctx.fillText('Press START (Enter) to retry ' + label, W/2 - 145, 108);
+      }
+      
+      // God Mode indicator
+      if(godMode && !ultraMode){
         ctx.fillStyle = 'rgba(230,57,70,0.2)'; ctx.fillRect(W - 220, 12, 200, 36);
         ctx.fillStyle = '#e63946'; ctx.font = 'bold 16px Arial';
-        ctx.fillText('🔥 RED HAIR MODE', W - 210, 36);
+        ctx.fillText('🔥 GOD MODE', W - 210, 36);
+      }
+      
+      // Ultra Mode indicator
+      if(ultraMode){
+        ctx.fillStyle = 'rgba(192,192,192,0.25)'; ctx.fillRect(W - 220, 12, 200, 36);
+        ctx.fillStyle = '#c0c0c0'; ctx.font = 'bold 16px Arial';
+        ctx.fillText('⚡ ULTRA MODE', W - 210, 36);
+      }
+
+      if(ultraReady && !inUltraMiniGame){
+        ctx.fillStyle = 'rgba(192,192,192,0.22)'; ctx.fillRect(W/2 - 150, 78, 300, 30);
+        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 14px Arial';
+        ctx.fillText('JIREN MINI GAME READY', W/2 - 120, 98);
+      }
+
+      if(jirenUnlocked){
+        ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(W - 220, 54, 200, 30);
+        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 14px Arial';
+        ctx.fillText('JIREN READY (J)', W - 208, 74);
       }
 
       // flash overlay when board-clear used
