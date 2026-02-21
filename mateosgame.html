@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Energy Fighter — Prototype</title>
+  <title>Shenron: the Game</title>
   <style>
     html,body{height:100%;margin:0;font-family:Inter,Arial,sans-serif;background:#0b1220;color:#fff}
     .wrap{max-width:980px;margin:24px auto;padding:18px;background:linear-gradient(180deg,#071021 0%,#0f1a2a 100%);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.6)}
@@ -13,19 +13,25 @@
     canvas{display:block;background:linear-gradient(180deg,#0a1724,#07101b);border-radius:6px;width:100%;height:auto}
     .hud{display:flex;gap:12px;align-items:center;margin-top:12px}
     .btn{background:#1b6bff;padding:8px 12px;border-radius:6px;color:#fff;text-decoration:none;border:none;cursor:pointer;font-weight:700}
+    .btn.secondary{background:#2f3f55}
     .muted{color:#9fb0c5}
     .controls{margin-top:12px;color:#cde3ff;font-size:13px}
+    .form-controls{margin-top:10px;display:flex;gap:8px;align-items:center}
+    .form-controls.hidden{display:none}
+    .form-controls .btn{background:#243a56}
+    .form-controls .btn.active{background:#ff4757}
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <div>
-        <h1>Energy Fighter — Prototype</h1>
-        <p class="lead">A fast single-file HTML5 canvas prototype inspired by high-energy anime fighting. Uses original art and sounds.</p>
+        <h1>Shenron: the Game</h1>
+        <p class="lead">Fast Paced Cool DBZ Fun!</p>
       </div>
       <div>
         <button id="resetBtn" class="btn">Restart</button>
+        <button id="fullscreenBtn" class="btn secondary">Fullscreen</button>
       </div>
     </header>
 
@@ -45,6 +51,11 @@
     <div class="controls">
       Controls: Move = Arrow keys, Jump = Up, Attack = Z, Energy Blast = X (charge to increase power).<br>
       This prototype includes enemies, pickups, scoring, and simple sound effects. <strong>Reach 50 kills to unlock a mini game!</strong>
+    </div>
+    <div id="formControls" class="form-controls hidden">
+      <button id="formNormal" class="btn">Normal</button>
+      <button id="formGod" class="btn">God</button>
+      <button id="formUltra" class="btn">Ultra</button>
     </div>
   </div>
 
@@ -96,12 +107,20 @@
     let jirenUnlocked = false;
     let jirenSummonCooldown = 0;
     let jirenSpawnUsed = false;
+
+    // Form switch unlock
+    let formsUnlocked = false;
     
     // Cheat code tracking
     let hackCheatUsed = false;
     let hackOneCheatUsed = false;
     let flyCheatUsed = false;
     let infiniteFly = false;
+
+    // Win screen
+    let winGame = false;
+    const winImage = new Image();
+    winImage.src = 'https://wallpaperaccess.com/full/937686.jpg';
 
     // Player
     const player = {
@@ -232,6 +251,40 @@
     window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
 
     document.getElementById('resetBtn').addEventListener('click', resetGame);
+    document.getElementById('fullscreenBtn').addEventListener('click', ()=>{
+      if(!document.fullscreenElement){
+        if(canvas.requestFullscreen){
+          canvas.requestFullscreen();
+        }
+      } else if(document.exitFullscreen){
+        document.exitFullscreen();
+      }
+    });
+
+    const formControls = document.getElementById('formControls');
+    const formNormal = document.getElementById('formNormal');
+    const formGod = document.getElementById('formGod');
+    const formUltra = document.getElementById('formUltra');
+
+    function setForm(mode){
+      if(mode === 'normal'){
+        godMode = false;
+        ultraMode = false;
+      } else if(mode === 'god'){
+        godMode = true;
+        ultraMode = false;
+      } else if(mode === 'ultra'){
+        godMode = true;
+        ultraMode = true;
+      }
+      formNormal.classList.toggle('active', mode === 'normal');
+      formGod.classList.toggle('active', mode === 'god');
+      formUltra.classList.toggle('active', mode === 'ultra');
+    }
+
+    formNormal.addEventListener('click', ()=>{ if(formsUnlocked && !winGame) setForm('normal'); });
+    formGod.addEventListener('click', ()=>{ if(formsUnlocked && !winGame) setForm('god'); });
+    formUltra.addEventListener('click', ()=>{ if(formsUnlocked && !winGame) setForm('ultra'); });
 
     function resetGame(){
       score = 0; lives = 3;
@@ -250,6 +303,7 @@
       infiniteFly = false;
       jirenUnlocked = false;
       jirenSummonCooldown = 0;
+      formsUnlocked = false;
     }
 
     // Simple rectangle collision
@@ -733,6 +787,9 @@
     // damage per second when in contact with enemy
     const contactDPS = 20; // HP per second
     function update(dt){
+      if(winGame){
+        return;
+      }
       // H A C K 1 cheat code (takes priority): unlock Ultra Mode instantly
       if(keys['h'] && keys['a'] && keys['c'] && keys['k'] && keys['1']){
         if(!hackOneCheatUsed){
@@ -1064,6 +1121,19 @@
         tone(1100, 0.8, 'sine', 0.2);
         tone(1320, 0.8, 'sine', 0.2);
       }
+
+      if(!formsUnlocked && godMode && ultraMode){
+        formsUnlocked = true;
+        setForm('ultra');
+      }
+
+      // Win condition: all forms + 500 kills
+      if(!winGame && godMode && ultraMode && killCount >= 500){
+        winGame = true;
+        entities = [];
+        tone(520, 0.6, 'sine', 0.2);
+        tone(780, 0.6, 'sine', 0.2);
+      }
       
       // spawn logic (reduced spawn frequency) - disabled during mini games
       if(!inMiniGame && !inUltraMiniGame){
@@ -1109,6 +1179,10 @@
       const flySecs = Math.max(0, player.flyTime / 1000).toFixed(1);
       document.getElementById('cycle').textContent = 'Cycle: ' + remainingCycle.toFixed(1) + 's | Fly: ' + flySecs + 's';
 
+      if(formsUnlocked){
+        formControls.classList.remove('hidden');
+      }
+
       // handle death / life loss
       if(player.hp <= 0){
         // Ultra mini game failure
@@ -1144,6 +1218,26 @@
     }
 
     function render(){
+      if(winGame){
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0,0,W,H);
+        if(winImage.complete){
+          const aspect = winImage.width / winImage.height;
+          const targetW = Math.min(W * 0.9, H * aspect * 0.9);
+          const targetH = targetW / aspect;
+          const dx = (W - targetW) / 2;
+          const dy = (H - targetH) / 2;
+          ctx.drawImage(winImage, dx, dy, targetW, targetH);
+        }
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 48px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('YOU WIN!', W/2, H/2 + 12);
+        ctx.textAlign = 'left';
+        return;
+      }
       // sky background gradient
       const g = ctx.createLinearGradient(0,0,0,H);
       g.addColorStop(0,'#87ceeb'); g.addColorStop(1,'#bfe9ff');
@@ -1193,7 +1287,7 @@
 
       // simple UI overlay
       ctx.fillStyle = 'rgba(0,0,0,0.12)'; ctx.fillRect(12,12,200,36);
-      ctx.fillStyle = '#fff'; ctx.font = '14px Arial'; ctx.fillText('Energy Fighter Prototype',20,36);
+      ctx.fillStyle = '#fff'; ctx.font = '14px Arial'; ctx.fillText('Shenron: the Game',20,36);
       
       // Mini game status
       if(inMiniGame){
