@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Shenron: the Game</title>
+
   <style>
     html,body{height:100%;margin:0;font-family:Inter,Arial,sans-serif;background:#0b1220;color:#fff}
     .wrap{max-width:980px;margin:24px auto;padding:18px;background:linear-gradient(180deg,#071021 0%,#0f1a2a 100%);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.6)}
@@ -48,14 +49,25 @@
       <div id="cycle" class="muted">Cycle: 30.0s | Fly: 10.0s</div>
     </div>
 
-    <div class="controls">
-      Controls: Move = Arrow keys, Jump = Up, Attack = Z, Energy Blast = X (charge to increase power).<br>
-      This prototype includes enemies, pickups, scoring, and simple sound effects. <strong>Reach 50 kills to unlock a mini game!</strong>
-    </div>
     <div id="formControls" class="form-controls hidden">
-      <button id="formNormal" class="btn">Normal</button>
-      <button id="formGod" class="btn">God</button>
-      <button id="formUltra" class="btn">Ultra</button>
+      <button id="formNormal" class="btn">Base</button>
+      <button id="formGod" class="btn">SSG</button>
+      <button id="formUltra" class="btn">UI</button>
+    </div>
+    <div class="controls">
+      Instructions:<br>
+      Move = Arrow keys | Jump = Up | Attack = Z | Energy Blast = X (hold to charge).<br>
+      Super Blast = R (uses Super stock) | Board Clear = T (uses 5 Super).<br>
+      How to play: defeat enemies to raise your kill count, earn coins, and unlock God/Ultra mini games.<br>
+      Retry mini games = Enter | Summon Jiren (when unlocked) = J | Spawn Jiren (once) = U.<br>
+      Piccolo mini game (after Jiren): press P to start and unlock Piccolo.<br>
+      Shop = S | Press number to buy/select avatars (1-5, 1000 points).<br>
+      Shield weapon = 10000 points (buy in shop) | Use shield = K (30 second duration).<br>
+      Switch forms with the buttons when unlocked | Fullscreen button is in the top right.<br>
+      Reach 50 kills to unlock the first mini game | Win at 500 kills with all forms.<br>
+      Kills to Mini Game: <span id="miniGameCountdown">100</span>.<br>
+      Don't use a board kill on a Mini Game.<br>
+      On the win screen, press R + S to restart.
     </div>
   </div>
 
@@ -86,6 +98,33 @@
     let superStock = 0; // granted by kill milestones (3 per 100 kills)
     let lastTime = 0;
     let entities = []; // enemies and pickups
+
+    // Shop and avatar unlocks
+    let shopOpen = false;
+    let currentAvatar = 'base';
+    let shieldUnlocked = false;
+    let shieldOn = false;
+    let shieldDuration = 0;
+    let shieldCooldown = 0;
+    const shieldMaxDuration = 30000;
+    const shieldCost = 10000;
+    const characterCatalog = [
+      { key: 'allygohan', name: 'Gohan', type: 'ally', cost: 2500, unlocked: false },
+      { key: 'allytrunks', name: 'Trunks', type: 'ally', cost: 2500, unlocked: false },
+      { key: 'allygoten', name: 'Goten', type: 'ally', cost: 2500, unlocked: false },
+      { key: 'gokuzeno', name: 'Goku/Zeno Fusion', type: 'playable', cost: 1000, unlocked: false },
+      { key: 'whirius', name: 'Whirius', type: 'playable', cost: 1000, unlocked: false },
+      { key: 'vegeta', name: 'Vegeta', type: 'playable', cost: 1000, unlocked: false },
+      { key: 'dyspo', name: 'Dyspo', type: 'enemy', cost: 0, unlocked: true },
+      { key: 'kidbuu', name: 'Kid Buu', type: 'enemy', cost: 0, unlocked: true }
+    ];
+    const avatarCatalog = [
+      { key: 'gohan', name: 'Gohan', cost: 1000, unlocked: false },
+      { key: 'krillin', name: 'Krillen', cost: 1000, unlocked: false },
+      { key: 'android18', name: 'Android 18', cost: 1000, unlocked: false },
+      { key: 'truezeno', name: 'True Zeno', cost: 1000, unlocked: false },
+      { key: 'gotenks', name: 'Gotenks', cost: 1000, unlocked: false }
+    ];
     
     // Mini game and transformation
     let miniGameTriggered = false;
@@ -94,6 +133,7 @@
     let miniGameBossesKilled = 0;
     let miniGameHP = 10;
     let retryPending = null; // 'god' or 'ultra'
+    let godModeUnlockKills = null;
     
     // Ultra Mode
     let ultraModeTriggered = false;
@@ -102,6 +142,15 @@
     let ultraGameJirenKilled = false;
     let ultraMiniGameHP = 10;
     let ultraReady = false;
+
+    // Ally mini game and ally unlock
+    let allyReady = false;
+    let allyUnlocked = false;
+    let inAllyMiniGame = false;
+    let allyMiniGameTriggered = false;
+    const allyMiniGoal = 5;
+    let allyMiniCounts = { normal: 0, strong: 0, boss: 0, jiren: 0 };
+    let allyKillTimer = 0;
 
     // Jiren unlock/summon
     let jirenUnlocked = false;
@@ -115,6 +164,7 @@
     let hackCheatUsed = false;
     let hackOneCheatUsed = false;
     let flyCheatUsed = false;
+    let qCheatUsed = false;
     let infiniteFly = false;
 
     // Win screen
@@ -158,14 +208,22 @@
       const activeEnemies = entities.filter(en => en.type === 'enemy').length;
       if(activeEnemies >= 6) return;
       const side = Math.random()>.5?1:-1;
-      // decide variant: equal chance for normal, strong, or boss (1/3 each)
-      const variants = ['normal','strong','boss'];
-      const variant = variants[Math.floor(Math.random()*3)];
+      // decide variant: include normal, strong, boss, dyspo, kidbuu (equal chance)
+      const variants = ['normal','strong','boss','dyspo','kidbuu'];
+      const variant = variants[Math.floor(Math.random()*5)];
       // place enemy on the same vertical band as the player (with small jitter)
       const baseY = player.y + (player.h - 56) / 2;
       const y = baseY + rand(-8, 8);
       const speedRange = variant === 'boss' ? [0.6,1.0] : [0.9,1.6];
-      const e = {type:'enemy', variant: variant, x: side>0 ? -40 : W+40, y: y, w:48, h:56, vx: side>0? rand(speedRange[0],speedRange[1]) : rand(-speedRange[1],-speedRange[0]), hp: variant === 'boss' ? 5 : (variant === 'strong' ? 3 : 1)};
+      // All new enemy types have same HP/damage as existing types
+      let hp = 1; // normal
+      if(variant === 'strong' || variant === 'dyspo') hp = 3;
+      if(variant === 'boss' || variant === 'kidbuu') hp = 5;
+      // Blast resistance: Dyspo has high resistance, Kid Buu has low resistance
+      let blastResistance = 1.0; // normal damage
+      if(variant === 'dyspo') blastResistance = 0.5; // takes half damage from blasts
+      if(variant === 'kidbuu') blastResistance = 1.5; // takes 50% MORE damage from blasts
+      const e = {type:'enemy', variant: variant, x: side>0 ? -40 : W+40, y: y, w:48, h:56, vx: side>0? rand(speedRange[0],speedRange[1]) : rand(-speedRange[1],-speedRange[0]), hp: hp, blastResistance: blastResistance};
       entities.push(e);
     }
     function spawnPickup(x,y){
@@ -208,10 +266,65 @@
       tone(120, 0.5, 'sawtooth', 0.2);
     }
 
+    function startAllyMiniGame(){
+      allyMiniGameTriggered = true;
+      inAllyMiniGame = true;
+      retryPending = null;
+      allyMiniCounts = { normal: 0, strong: 0, boss: 0, jiren: 0 };
+      player.hp = 10;
+      entities = [];
+      for(let i = 0; i < 3; i++) spawnAllyMiniEnemy();
+      tone(160, 0.5, 'sawtooth', 0.2);
+    }
+
+    function spawnAllyMiniEnemy(){
+      const remaining = [];
+      if(allyMiniCounts.normal < allyMiniGoal) remaining.push('normal');
+      if(allyMiniCounts.strong < allyMiniGoal) remaining.push('strong');
+      if(allyMiniCounts.boss < allyMiniGoal) remaining.push('boss');
+      if(allyMiniCounts.jiren < allyMiniGoal) remaining.push('jiren');
+      if(!remaining.length) return;
+
+      const variant = remaining[Math.floor(Math.random() * remaining.length)];
+      const side = Math.random() > 0.5 ? 1 : -1;
+      const baseY = player.y + (player.h - 56) / 2;
+      const y = baseY + rand(-10, 10);
+      const speedRange = (variant === 'boss' || variant === 'jiren') ? [0.6,1.1] : [0.9,1.6];
+      const hp = variant === 'jiren' ? 10 : (variant === 'boss' ? 5 : (variant === 'strong' ? 3 : 1));
+      entities.push({type:'enemy', variant, x: side>0 ? -40 : W+40, y, w:48, h:56, vx: side>0 ? rand(speedRange[0], speedRange[1]) : rand(-speedRange[1], -speedRange[0]), hp});
+    }
+
+    function recordAllyMiniKill(variant){
+      if(!inAllyMiniGame) return;
+      if(variant === 'jiren') allyMiniCounts.jiren += 1;
+      else if(variant === 'boss') allyMiniCounts.boss += 1;
+      else if(variant === 'strong') allyMiniCounts.strong += 1;
+      else allyMiniCounts.normal += 1;
+    }
+
     // Input
     window.addEventListener('keydown', e=>{ 
       keys[e.key.toLowerCase()] = true; 
       if(e.key===' '){ e.preventDefault(); }
+      if(e.key.toLowerCase() === 's'){
+        if(!winGame){
+          shopOpen = !shopOpen;
+        }
+      }
+      if(e.key.toLowerCase() === 'k'){
+        if(shieldUnlocked && !shopOpen && !winGame){
+          if(!shieldOn && shieldCooldown <= 0){
+            // Turn on shield, start duration timer
+            shieldOn = true;
+            shieldDuration = shieldMaxDuration;
+            tone(680, 0.08, 'sine', 0.14);
+          } else if(shieldOn){
+            // Turn off shield early
+            shieldOn = false;
+            tone(320, 0.08, 'sine', 0.14);
+          }
+        }
+      }
       // jump on Up (allow mid-air if flyTime available)
       if(e.key === 'ArrowUp'){
         if(player.onGround || player.flyTime > 0){
@@ -235,10 +348,12 @@
           let removed = 0;
           for(let i = entities.length - 1; i >= 0; i--){
             if(entities[i] && entities[i].type === 'enemy'){
+              if(entities[i].variant === 'jiren') allyReady = true;
+              recordAllyMiniKill(entities[i].variant);
               entities.splice(i,1);
               removed += 1;
               score += 60;
-              if(!inMiniGame && !inUltraMiniGame) addKills(1);
+              if(!inMiniGame && !inUltraMiniGame && !inAllyMiniGame) addKills(1);
             }
           }
           superStock = Math.max(0, superStock - 5);
@@ -293,6 +408,7 @@
       player.vx = 0; player.vy = 0; player.onGround = false;
       player.energy = 0; player.flyTime = player.flyTimeMax;
       cycleTimer = 0;
+      enemyShootTimer = 0;
       entities = [];
       coinCount = 0; killCount = 0; killMilestone = 0; superStock = 0;
       miniGameTriggered = false; inMiniGame = false; godMode = false;
@@ -300,49 +416,140 @@
       ultraModeTriggered = false; inUltraMiniGame = false; ultraMode = false;
       ultraGameJirenKilled = false;
       retryPending = null;
+      godModeUnlockKills = null;
+      allyReady = false;
+      allyUnlocked = false;
+      inAllyMiniGame = false;
+      allyMiniGameTriggered = false;
+      allyMiniCounts = { normal: 0, strong: 0, boss: 0, jiren: 0 };
+      allyKillTimer = 0;
       infiniteFly = false;
       jirenUnlocked = false;
       jirenSummonCooldown = 0;
       formsUnlocked = false;
+      winGame = false;
+      shopOpen = false;
+      currentAvatar = 'base';
+      avatarCatalog.forEach(a => { a.unlocked = false; });
+      characterCatalog.forEach(c => { if(c.type !== 'enemy') c.unlocked = false; });
+      shieldUnlocked = false;
+      shieldOn = false;
+      shieldDuration = 0;
+      shieldCooldown = 0;
     }
 
     // Simple rectangle collision
     function collide(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
 
-    // Draw player (original art: stylized fighter)
+    // Draw player (original art: stylized fighter with avatar variants)
     function drawPlayer(p){
       ctx.save();
+      const avatarStyles = {
+        base: { skin:'#f1d2b0', gi:'#ff8c1a', undershirt:'#0b5bd6', sash:'#b24d00', pants:'#ff8c1a', boots:'#2b6bff', hair:'#0b0b0b', bald:false },
+        gohan: { skin:'#f1d2b0', gi:'#ff8c1a', undershirt:'#0b5bd6', sash:'#2b6bff', pants:'#ff8c1a', boots:'#2b6bff', hair:'#101010', bald:false },
+        krillin: { skin:'#f1d2b0', gi:'#ff9b2f', undershirt:'#ff9b2f', sash:'#2b6bff', pants:'#ff9b2f', boots:'#2b6bff', hair:'#f1d2b0', bald:true },
+        android18: { skin:'#f5d7c0', gi:'#2d6cdf', undershirt:'#f0f0f0', sash:'#2d2d2d', pants:'#2d2d2d', boots:'#8a6b3b', hair:'#f1e27a', bald:false },
+        truezeno: { skin:'#f2c94c', gi:'#ff4fa3', undershirt:'#1a1a1a', sash:'#6c5ce7', pants:'#ff4fa3', boots:'#ff4fa3', hair:'#00aaff', bald:false },
+        gotenks: { skin:'#f1d2b0', gi:'#5a78ff', undershirt:'#ffd86b', sash:'#2bb7c8', pants:'#f2f2f2', boots:'#2b2b2b', hair:'#0b0b0b', bald:false }
+      };
+      const style = avatarStyles[currentAvatar] || avatarStyles.base;
+      const hairColor = ultraMode ? '#c0c0c0' : (godMode ? '#e63946' : style.hair);
       // charging aura
       if(p.charging){ ctx.globalAlpha = 0.18; ctx.fillStyle = '#ffd86b'; ctx.beginPath(); ctx.ellipse(p.x+p.w/2, p.y+p.h/2, 48 + p.energy*0.2, 72 + p.energy*0.25, 0, 0, Math.PI*2); ctx.fill(); }
 
       // pants / lower robe
-      ctx.fillStyle = '#ff8c1a'; ctx.fillRect(p.x+6, p.y+28, p.w-12, p.h-20);
+      ctx.fillStyle = style.pants; ctx.fillRect(p.x+6, p.y+28, p.w-12, p.h-20);
       // sash
-      ctx.fillStyle = '#b24d00'; ctx.fillRect(p.x+8, p.y+42, p.w-16, 8);
+      ctx.fillStyle = style.sash; ctx.fillRect(p.x+8, p.y+42, p.w-16, 8);
 
       // gi torso (orange) and blue undershirt (V-neck)
-      ctx.fillStyle = '#ff8c1a'; ctx.fillRect(p.x+6, p.y+12, p.w-12, 28);
-      ctx.fillStyle = '#0b5bd6'; ctx.beginPath(); ctx.moveTo(p.x + p.w/2, p.y + 18); ctx.lineTo(p.x + 10, p.y + 38); ctx.lineTo(p.x + p.w - 10, p.y + 38); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = style.gi; ctx.fillRect(p.x+6, p.y+12, p.w-12, 28);
+      ctx.fillStyle = style.undershirt; ctx.beginPath(); ctx.moveTo(p.x + p.w/2, p.y + 18); ctx.lineTo(p.x + 10, p.y + 38); ctx.lineTo(p.x + p.w - 10, p.y + 38); ctx.closePath(); ctx.fill();
 
       // sleeves
-      ctx.fillStyle = '#ff8c1a'; ctx.fillRect(p.x-6, p.y+28, 14, 12); ctx.fillRect(p.x+p.w-8, p.y+28, 14, 12);
+      ctx.fillStyle = style.gi; ctx.fillRect(p.x-6, p.y+28, 14, 12); ctx.fillRect(p.x+p.w-8, p.y+28, 14, 12);
 
       // boots
-      ctx.fillStyle = '#2b6bff'; ctx.fillRect(p.x+6, p.y+p.h-12, 14, 8); ctx.fillRect(p.x+p.w-20, p.y+p.h-12, 14, 8);
+      ctx.fillStyle = style.boots; ctx.fillRect(p.x+6, p.y+p.h-12, 14, 8); ctx.fillRect(p.x+p.w-20, p.y+p.h-12, 14, 8);
 
       // face
-      ctx.fillStyle = '#f1d2b0'; ctx.beginPath(); ctx.ellipse(p.x+p.w/2, p.y+10, 12, 12, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = style.skin; ctx.beginPath(); ctx.ellipse(p.x+p.w/2, p.y+10, 12, 12, 0, 0, Math.PI*2); ctx.fill();
 
-      // spiky hair (stylized, original) - red when transformed
-      ctx.fillStyle = (ultraMode ? '#c0c0c0' : (godMode ? '#e63946' : '#0b0b0b')); 
-      ctx.beginPath();
-      ctx.moveTo(p.x + p.w/2, p.y - 8);
-      ctx.lineTo(p.x + p.w - 2, p.y + 6);
-      ctx.lineTo(p.x + p.w/2 + 6, p.y + 2);
-      ctx.lineTo(p.x + p.w/2 + 2, p.y + 12);
-      ctx.lineTo(p.x + p.w/2 - 6, p.y + 4);
-      ctx.lineTo(p.x + 2, p.y + 8);
-      ctx.closePath(); ctx.fill();
+      // avatar-specific clothing tweaks
+      if(currentAvatar === 'android18'){
+        ctx.fillStyle = '#3352aa';
+        ctx.fillRect(p.x + 4, p.y + 18, p.w - 8, 22);
+        ctx.fillStyle = '#1f1f1f';
+        ctx.fillRect(p.x + 6, p.y + 40, p.w - 12, 8);
+        ctx.fillStyle = '#f0f0f0';
+        ctx.fillRect(p.x - 6, p.y + 22, 12, 10);
+        ctx.fillRect(p.x + p.w - 6, p.y + 22, 12, 10);
+      } else if(currentAvatar === 'truezeno'){
+        ctx.fillStyle = '#0f0f0f';
+        ctx.fillRect(p.x + 6, p.y + 12, p.w - 12, 30);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(p.x + p.w/2 - 4, p.y + 14, 8, 26);
+        ctx.fillStyle = '#ff4fa3';
+        ctx.fillRect(p.x + 4, p.y + 8, p.w - 8, 6);
+      } else if(currentAvatar === 'gotenks'){
+        ctx.fillStyle = '#6c8bff';
+        ctx.fillRect(p.x + 2, p.y + 10, p.w - 4, 16);
+        ctx.fillStyle = '#ffd86b';
+        ctx.fillRect(p.x + 4, p.y + 26, p.w - 8, 10);
+        ctx.fillStyle = '#2bb7c8';
+        ctx.fillRect(p.x + 2, p.y + 40, p.w - 4, 6);
+      } else if(currentAvatar === 'gohan'){
+        ctx.fillStyle = '#0b5bd6';
+        ctx.fillRect(p.x + 8, p.y + 16, p.w - 16, 6);
+      }
+
+      // hair (skip for bald avatar)
+      if(!style.bald){
+        ctx.fillStyle = hairColor;
+        if(currentAvatar === 'android18'){
+          ctx.fillRect(p.x + 6, p.y - 2, p.w - 12, 8);
+          ctx.fillRect(p.x + 4, p.y + 2, p.w - 8, 6);
+        } else if(currentAvatar === 'truezeno'){
+          ctx.beginPath();
+          ctx.ellipse(p.x + p.w/2, p.y + 2, 10, 6, 0, 0, Math.PI*2);
+          ctx.fill();
+        } else if(currentAvatar === 'gotenks'){
+          ctx.beginPath();
+          ctx.moveTo(p.x + p.w/2, p.y - 12);
+          ctx.lineTo(p.x + p.w - 2, p.y + 4);
+          ctx.lineTo(p.x + p.w/2 + 8, p.y + 2);
+          ctx.lineTo(p.x + p.w/2 + 4, p.y + 14);
+          ctx.lineTo(p.x + p.w/2 - 8, p.y + 4);
+          ctx.lineTo(p.x + 2, p.y + 6);
+          ctx.closePath(); ctx.fill();
+        } else if(currentAvatar === 'gohan'){
+          ctx.beginPath();
+          ctx.moveTo(p.x + p.w/2, p.y - 6);
+          ctx.lineTo(p.x + p.w - 4, p.y + 6);
+          ctx.lineTo(p.x + p.w/2 + 4, p.y + 4);
+          ctx.lineTo(p.x + p.w/2, p.y + 12);
+          ctx.lineTo(p.x + p.w/2 - 8, p.y + 6);
+          ctx.lineTo(p.x + 4, p.y + 8);
+          ctx.closePath(); ctx.fill();
+        } else {
+          ctx.beginPath();
+          ctx.moveTo(p.x + p.w/2, p.y - 8);
+          ctx.lineTo(p.x + p.w - 2, p.y + 6);
+          ctx.lineTo(p.x + p.w/2 + 6, p.y + 2);
+          ctx.lineTo(p.x + p.w/2 + 2, p.y + 12);
+          ctx.lineTo(p.x + p.w/2 - 6, p.y + 4);
+          ctx.lineTo(p.x + 2, p.y + 8);
+          ctx.closePath(); ctx.fill();
+        }
+      } else {
+        // Krillin-style dots
+        ctx.fillStyle = '#cc8c5a';
+        for(let i=0;i<3;i++){
+          ctx.beginPath();
+          ctx.arc(p.x + p.w/2 - 6 + i*6, p.y + 6, 1.5, 0, Math.PI*2);
+          ctx.fill();
+        }
+      }
       
       // god/ultra mode aura
       if(godMode || ultraMode){
@@ -360,299 +567,371 @@
       ctx.restore();
     }
 
-    // Draw enemy (Frieza-inspired alien - original art)
+    // Draw enemy (Frieza-inspired final form look - original art)
     function drawEnemy(e){
       ctx.save();
-      
-      // tail (curved, white with purple tip)
-      ctx.strokeStyle = '#c0c0c0'; ctx.lineWidth = 6;
-      ctx.beginPath();
-      ctx.moveTo(e.x + e.w/2, e.y + e.h - 10);
-      ctx.quadraticCurveTo(e.x + e.w + 25, e.y + e.h/2, e.x + e.w - 8, e.y + e.h*0.3);
-      ctx.stroke();
-      // purple tail tip
-      ctx.strokeStyle = '#8b3a9a'; ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(e.x + e.w - 8, e.y + e.h*0.3);
-      ctx.quadraticCurveTo(e.x + e.w + 18, e.y + e.h*0.2, e.x + e.w + 12, e.y + e.h*0.1);
-      ctx.stroke();
-      
-      // white body (torso)
-      ctx.fillStyle = '#e8e8e8';
-      ctx.beginPath();
-      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.5, e.w*0.46, e.h*0.52, 0, 0, Math.PI*2);
-      ctx.fill();
-      
-      // purple chest armor (diamond shaped)
-      ctx.fillStyle = '#7a3e99';
-      ctx.beginPath();
-      ctx.moveTo(e.x + e.w/2, e.y + e.h*0.35);
-      ctx.lineTo(e.x + e.w*0.7, e.y + e.h*0.55);
-      ctx.lineTo(e.x + e.w/2, e.y + e.h*0.68);
-      ctx.lineTo(e.x + e.w*0.3, e.y + e.h*0.55);
-      ctx.closePath();
-      ctx.fill();
-      
-      // purple shoulder pauldrons
-      ctx.fillStyle = '#6a2d99';
-      ctx.beginPath();
-      ctx.ellipse(e.x + e.w*0.15, e.y + e.h*0.46, e.w*0.16, e.h*0.2, -0.4, 0, Math.PI*2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(e.x + e.w*0.85, e.y + e.h*0.46, e.w*0.16, e.h*0.2, 0.4, 0, Math.PI*2);
-      ctx.fill();
-      
-      // white gloved hands
-      ctx.fillStyle = '#f5f5f5';
-      ctx.beginPath();
-      ctx.ellipse(e.x - 8, e.y + e.h*0.48, 7, 10, 0, 0, Math.PI*2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(e.x + e.w + 8, e.y + e.h*0.48, 7, 10, 0, 0, Math.PI*2);
-      ctx.fill();
-      
-      // purple leg armor
-      ctx.fillStyle = '#8b3a9a';
-      ctx.fillRect(e.x + e.w*0.22, e.y + e.h*0.68, e.w*0.28, e.h*0.28);
-      ctx.fillRect(e.x + e.w*0.5, e.y + e.h*0.68, e.w*0.28, e.h*0.28);
-      
-      // white under-legs
-      ctx.fillStyle = '#e8e8e8';
-      ctx.fillRect(e.x + e.w*0.22, e.y + e.h*0.8, e.w*0.28, e.h*0.2);
-      ctx.fillRect(e.x + e.w*0.5, e.y + e.h*0.8, e.w*0.28, e.h*0.2);
-      
-      // distinctive head (dome-shaped purple)
-      ctx.fillStyle = '#6a2d99';
-      ctx.beginPath();
-      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.24, e.w*0.32, e.h*0.24, 0, 0, Math.PI*2);
-      ctx.fill();
-      
-      // head highlight (dome shine)
-      ctx.fillStyle = '#9b5bb8';
-      ctx.beginPath();
-      ctx.ellipse(e.x + e.w/2 - 4, e.y + e.h*0.14, e.w*0.15, e.h*0.12, 0, 0, Math.PI*2);
-      ctx.fill();
-      
-      // large purple eyes
-      ctx.fillStyle = '#4a1a7a';
-      ctx.beginPath();
-      ctx.ellipse(e.x + e.w*0.36, e.y + e.h*0.2, e.w*0.09, e.h*0.08, 0, 0, Math.PI*2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(e.x + e.w*0.64, e.y + e.h*0.2, e.w*0.09, e.h*0.08, 0, 0, Math.PI*2);
-      ctx.fill();
-      
-      // eye shine
-      ctx.fillStyle = '#000';
-      ctx.fillRect(e.x + e.w*0.35, e.y + e.h*0.18, e.w*0.035, e.h*0.05);
-      ctx.fillRect(e.x + e.w*0.63, e.y + e.h*0.18, e.w*0.035, e.h*0.05);
-      
-      ctx.restore();
-    }
 
-    // Draw strong enemy (Cell-inspired insectoid — original art)
-    function drawStrongEnemy(e){
-      ctx.save();
-      
-      // legs/lower body (green with spots)
-      ctx.fillStyle = '#5dbd4e';
-      ctx.fillRect(e.x + e.w*0.2, e.y + e.h*0.64, e.w*0.28, e.h*0.36);
-      ctx.fillRect(e.x + e.w*0.52, e.y + e.h*0.64, e.w*0.28, e.h*0.36);
-      // yellow boots/feet
-      ctx.fillStyle = '#ffd700';
-      ctx.fillRect(e.x + e.w*0.2, e.y + e.h*0.92, e.w*0.28, e.h*0.08);
-      ctx.fillRect(e.x + e.w*0.52, e.y + e.h*0.92, e.w*0.28, e.h*0.08);
-      
-      // torso/body (spotted green)
-      ctx.fillStyle = '#5dbd4e';
-      ctx.beginPath(); 
-      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.5, e.w*0.46, e.h*0.42, 0, 0, Math.PI*2); 
-      ctx.fill();
-      
-      // spots on body (darker green/black)
-      ctx.fillStyle = '#1a4d2e';
-      for(let i=0; i<8; i++){
-        const spotX = e.x + e.w*(0.2 + Math.sin(i*1.3)*0.15 + 0.3);
-        const spotY = e.y + e.h*(0.4 + Math.cos(i*1.7)*0.2 + 0.2);
-        ctx.beginPath();
-        ctx.arc(spotX, spotY, e.w*0.06 + (i%2)*2, 0, Math.PI*2);
-        ctx.fill();
-      }
-      
-      // white chest armor plates
-      ctx.fillStyle = '#e8e8e8';
+      // tail (longer, curved, purple tip)
+      ctx.strokeStyle = '#d7d7d7';
+      ctx.lineWidth = 6;
       ctx.beginPath();
-      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.46, e.w*0.32, e.h*0.28, 0, 0, Math.PI*2);
-      ctx.fill();
-      // armor detail lines
-      ctx.strokeStyle = '#b0b0b0';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(e.x + e.w*0.32, e.y + e.h*0.38);
-      ctx.lineTo(e.x + e.w*0.68, e.y + e.h*0.38);
+      ctx.moveTo(e.x + e.w*0.45, e.y + e.h*0.82);
+      ctx.quadraticCurveTo(e.x + e.w + 30, e.y + e.h*0.7, e.x + e.w - 6, e.y + e.h*0.28);
       ctx.stroke();
+      ctx.strokeStyle = '#7b2cbf';
+      ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.moveTo(e.x + e.w*0.5, e.y + e.h*0.3);
-      ctx.lineTo(e.x + e.w*0.5, e.y + e.h*0.62);
+      ctx.moveTo(e.x + e.w - 6, e.y + e.h*0.28);
+      ctx.quadraticCurveTo(e.x + e.w + 18, e.y + e.h*0.18, e.x + e.w + 10, e.y + e.h*0.08);
       ctx.stroke();
-      
-      // purple/dark shoulder plates
-      ctx.fillStyle = '#5a2d7a';
-      ctx.beginPath();
-      ctx.ellipse(e.x + e.w*0.15, e.y + e.h*0.42, e.w*0.18, e.h*0.16, -0.3, 0, Math.PI*2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(e.x + e.w*0.85, e.y + e.h*0.42, e.w*0.18, e.h*0.16, 0.3, 0, Math.PI*2);
-      ctx.fill();
-      
-      // arms (green spotted)
-      ctx.fillStyle = '#5dbd4e';
-      ctx.fillRect(e.x - 6, e.y + e.h*0.4, 12, 24);
-      ctx.fillRect(e.x + e.w - 6, e.y + e.h*0.4, 12, 24);
-      // spots on arms
-      ctx.fillStyle = '#1a4d2e';
-      ctx.beginPath(); ctx.arc(e.x - 2, e.y + e.h*0.48, 3, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(e.x + e.w + 2, e.y + e.h*0.48, 3, 0, Math.PI*2); ctx.fill();
-      
-      // black helmet/head crest (angular insectoid)
-      ctx.fillStyle = '#1a1a2e';
-      ctx.beginPath();
-      ctx.moveTo(e.x + e.w*0.5, e.y - e.h*0.08);
-      ctx.lineTo(e.x + e.w*0.25, e.y + e.h*0.18);
-      ctx.lineTo(e.x + e.w*0.3, e.y + e.h*0.28);
-      ctx.lineTo(e.x + e.w*0.7, e.y + e.h*0.28);
-      ctx.lineTo(e.x + e.w*0.75, e.y + e.h*0.18);
-      ctx.closePath();
-      ctx.fill();
-      
-      // purple head accent
-      ctx.fillStyle = '#6a3d8a';
-      ctx.fillRect(e.x + e.w*0.35, e.y + e.h*0.14, e.w*0.3, e.h*0.08);
-      
-      // eyes (pink/red glowing)
-      ctx.fillStyle = '#ff1744';
-      ctx.beginPath();
-      ctx.ellipse(e.x + e.w*0.38, e.y + e.h*0.22, e.w*0.08, e.h*0.05, 0, 0, Math.PI*2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(e.x + e.w*0.62, e.y + e.h*0.22, e.w*0.08, e.h*0.05, 0, 0, Math.PI*2);
-      ctx.fill();
-      
-      // energy aura when strong
-      if(e.hp > 1){ 
-        ctx.globalAlpha = 0.10; 
-        ctx.fillStyle = '#7bed9f'; 
-        ctx.beginPath(); 
-        ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*0.9, e.h, 0, 0, Math.PI*2); 
-        ctx.fill(); 
-      }
-      ctx.restore();
-    }
 
-    // Draw boss enemy (Beerus-inspired original cat-deity look — original art)
-    function drawBoss(e){
-      ctx.save();
-      
-      // lower robes / pants (orange and gold flowing)
-      ctx.fillStyle = '#ff8533'; 
-      ctx.fillRect(e.x + e.w*0.15, e.y + e.h*0.52, e.w*0.7, e.h*0.48);
-      // gold trim on pants
-      ctx.fillStyle = '#d4af37'; 
-      ctx.fillRect(e.x + e.w*0.15, e.y + e.h*0.52, e.w*0.7, e.h*0.06);
-      
-      // blue sash / waist wrap
-      ctx.fillStyle = '#1e5ba8';
-      ctx.fillRect(e.x + e.w*0.12, e.y + e.h*0.44, e.w*0.76, e.h*0.14);
-      // sash detail
-      ctx.fillStyle = '#2b6bff';
-      ctx.fillRect(e.x + e.w*0.14, e.y + e.h*0.46, e.w*0.72, e.h*0.04);
-      
-      // upper body (purple skin)
-      ctx.fillStyle = '#9370db';
-      ctx.beginPath(); ctx.ellipse(e.x + e.w/2, e.y + e.h*0.32, e.w*0.42, e.h*0.28, 0, 0, Math.PI*2); ctx.fill();
-      
-      // ornate collar / chest piece (gold)
-      ctx.fillStyle = '#d4af37';
+      // legs (white with purple shin armor)
+      ctx.fillStyle = '#f2f2f2';
+      ctx.fillRect(e.x + e.w*0.22, e.y + e.h*0.64, e.w*0.24, e.h*0.34);
+      ctx.fillRect(e.x + e.w*0.54, e.y + e.h*0.64, e.w*0.24, e.h*0.34);
+      ctx.fillStyle = '#7b2cbf';
+      ctx.fillRect(e.x + e.w*0.22, e.y + e.h*0.72, e.w*0.24, e.h*0.12);
+      ctx.fillRect(e.x + e.w*0.54, e.y + e.h*0.72, e.w*0.24, e.h*0.12);
+
+      // torso (white) and purple chest plate
+      ctx.fillStyle = '#f2f2f2';
       ctx.beginPath();
-      ctx.arc(e.x + e.w/2, e.y + e.h*0.38, e.w*0.48, Math.PI * 1.1, Math.PI * 1.9);
-      ctx.arc(e.x + e.w/2, e.y + e.h*0.38, e.w*0.35, Math.PI * 1.9, Math.PI * 1.1, true);
-      ctx.closePath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.5, e.w*0.42, e.h*0.46, 0, 0, Math.PI*2);
       ctx.fill();
-      
-      // collar details (darker gold accents)
-      ctx.fillStyle = '#b8860b';
-      ctx.fillRect(e.x + e.w*0.22, e.y + e.h*0.36, e.w*0.08, e.h*0.04);
-      ctx.fillRect(e.x + e.w*0.7, e.y + e.h*0.36, e.w*0.08, e.h*0.04);
-      
-      // neck/shoulders purple
-      ctx.fillStyle = '#9370db';
-      ctx.fillRect(e.x + e.w*0.4, e.y + e.h*0.28, e.w*0.2, e.h*0.12);
-      
-      // long cat-like ears (purple, tall and pointed)
-      ctx.fillStyle = '#7a5bb5';
+      ctx.fillStyle = '#7b2cbf';
       ctx.beginPath();
-      ctx.moveTo(e.x + e.w*0.25, e.y + e.h*0.18);
-      ctx.lineTo(e.x + e.w*0.15, e.y - e.h*0.25);
-      ctx.lineTo(e.x + e.w*0.35, e.y + e.h*0.15);
-      ctx.closePath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.52, e.w*0.22, e.h*0.18, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // arms and hands (white forearms with purple pads)
+      ctx.fillStyle = '#f2f2f2';
+      ctx.fillRect(e.x - 8, e.y + e.h*0.42, 12, 28);
+      ctx.fillRect(e.x + e.w - 4, e.y + e.h*0.42, 12, 28);
+      ctx.fillStyle = '#7b2cbf';
+      ctx.beginPath();
+      ctx.ellipse(e.x - 2, e.y + e.h*0.44, 6, 8, 0, 0, Math.PI*2);
       ctx.fill();
       ctx.beginPath();
-      ctx.moveTo(e.x + e.w*0.75, e.y + e.h*0.18);
-      ctx.lineTo(e.x + e.w*0.85, e.y - e.h*0.25);
-      ctx.lineTo(e.x + e.w*0.65, e.y + e.h*0.15);
-      ctx.closePath();
+      ctx.ellipse(e.x + e.w + 6, e.y + e.h*0.44, 6, 8, 0, 0, Math.PI*2);
       ctx.fill();
-      
-      // head (purple)
-      ctx.fillStyle = '#9370db';
-      ctx.beginPath(); 
-      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.2, e.w*0.28, e.h*0.18, 0, 0, Math.PI*2); 
+
+      // head (white face with purple dome)
+      ctx.fillStyle = '#f2f2f2';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.22, e.w*0.26, e.h*0.2, 0, 0, Math.PI*2);
       ctx.fill();
-      
-      // eyes (cat-like, slanted)
-      ctx.fillStyle = '#ffd700';
-      ctx.beginPath(); 
-      ctx.ellipse(e.x + e.w*0.38, e.y + e.h*0.2, e.w*0.08, e.h*0.05, 0, 0, Math.PI*2); 
+      ctx.fillStyle = '#7b2cbf';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.15, e.w*0.22, e.h*0.16, 0, 0, Math.PI*2);
       ctx.fill();
-      ctx.beginPath(); 
-      ctx.ellipse(e.x + e.w*0.62, e.y + e.h*0.2, e.w*0.08, e.h*0.05, 0, 0, Math.PI*2); 
+      ctx.fillStyle = '#a56bff';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2 - 4, e.y + e.h*0.11, e.w*0.1, e.h*0.08, 0, 0, Math.PI*2);
       ctx.fill();
-      // pupils (vertical slits)
+
+      // eyes and mouth
       ctx.fillStyle = '#111';
-      ctx.fillRect(e.x + e.w*0.37, e.y + e.h*0.19, e.w*0.02, e.h*0.045);
-      ctx.fillRect(e.x + e.w*0.61, e.y + e.h*0.19, e.w*0.02, e.h*0.045);
-      
-      // arms (purple)
-      ctx.fillStyle = '#9370db'; 
-      ctx.fillRect(e.x - 8, e.y + e.h*0.36, 14, 22); 
-      ctx.fillRect(e.x + e.w - 6, e.y + e.h*0.36, 14, 22);
-      
-      // staff/scepter hint (if space permits - simple circle on stick)
-      ctx.strokeStyle = '#d4af37'; 
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(e.x + e.w + 8, e.y + e.h*0.5);
-      ctx.lineTo(e.x + e.w + 8, e.y + e.h*0.15);
-      ctx.stroke();
-      ctx.fillStyle = '#d4af37';
-      ctx.beginPath();
-      ctx.arc(e.x + e.w + 8, e.y + e.h*0.1, 6, 0, Math.PI*2);
-      ctx.fill();
-      ctx.fillStyle = 'transparent';
-      ctx.strokeStyle = '#d4af37';
+      ctx.fillRect(e.x + e.w*0.36, e.y + e.h*0.2, e.w*0.06, 3);
+      ctx.fillRect(e.x + e.w*0.58, e.y + e.h*0.2, e.w*0.06, 3);
+      ctx.strokeStyle = '#a01a1a';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(e.x + e.w + 8, e.y + e.h*0.1, 4, 0, Math.PI*2);
+      ctx.arc(e.x + e.w/2, e.y + e.h*0.28, e.w*0.08, 0, Math.PI, false);
       ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // Draw strong enemy (Cell-inspired full form look — original art)
+    function drawStrongEnemy(e){
+      ctx.save();
+
+      // back wing panels (black cape-like with purple highlights)
+      ctx.fillStyle = '#0d0d0d';
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.14, e.y + e.h*0.32);
+      ctx.lineTo(e.x - e.w*0.42, e.y + e.h*0.72);
+      ctx.lineTo(e.x - e.w*0.38, e.y + e.h*0.88);
+      ctx.lineTo(e.x + e.w*0.18, e.y + e.h*0.84);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.86, e.y + e.h*0.32);
+      ctx.lineTo(e.x + e.w*1.42, e.y + e.h*0.72);
+      ctx.lineTo(e.x + e.w*1.38, e.y + e.h*0.88);
+      ctx.lineTo(e.x + e.w*0.82, e.y + e.h*0.84);
+      ctx.closePath();
+      ctx.fill();
+
+      // wing highlights
+      ctx.strokeStyle = '#2a1a3a';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // legs (black bio-suit)
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(e.x + e.w*0.28, e.y + e.h*0.62, e.w*0.18, e.h*0.38);
+      ctx.fillRect(e.x + e.w*0.54, e.y + e.h*0.62, e.w*0.18, e.h*0.38);
+
+      // green shin armor with spots
+      ctx.fillStyle = '#5bc236';
+      ctx.fillRect(e.x + e.w*0.26, e.y + e.h*0.7, e.w*0.2, e.h*0.18);
+      ctx.fillRect(e.x + e.w*0.54, e.y + e.h*0.7, e.w*0.2, e.h*0.18);
       
-      // power aura when damaged
-      if(e.hp < (variantHp(e))) { 
-        ctx.globalAlpha = 0.12; 
-        ctx.fillStyle = '#ba55d3'; 
-        ctx.beginPath(); 
-        ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*1.2, e.h*1.2, 0, 0, Math.PI*2); 
-        ctx.fill(); 
+      // shin spots
+      ctx.fillStyle = '#1f5a2b';
+      for(let i = 0; i < 4; i++){
+        ctx.beginPath();
+        ctx.arc(e.x + e.w*0.3 + (i % 2)*e.w*0.08, e.y + e.h*0.77 + Math.floor(i/2)*e.h*0.06, e.w*0.025, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(e.x + e.w*0.58 + (i % 2)*e.w*0.08, e.y + e.h*0.77 + Math.floor(i/2)*e.h*0.06, e.w*0.025, 0, Math.PI*2);
+        ctx.fill();
       }
+
+      // yellow boots
+      ctx.fillStyle = '#f2c94c';
+      ctx.fillRect(e.x + e.w*0.24, e.y + e.h*0.9, e.w*0.24, e.h*0.1);
+      ctx.fillRect(e.x + e.w*0.52, e.y + e.h*0.9, e.w*0.24, e.h*0.1);
+      ctx.strokeStyle = '#d4a737';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(e.x + e.w*0.24, e.y + e.h*0.9, e.w*0.24, e.h*0.1);
+      ctx.strokeRect(e.x + e.w*0.52, e.y + e.h*0.9, e.w*0.24, e.h*0.1);
+
+      // pelvis (black)
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(e.x + e.w*0.32, e.y + e.h*0.58, e.w*0.36, e.h*0.08);
+
+      // torso (green spotted bio-armor)
+      ctx.fillStyle = '#5bc236';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.48, e.w*0.36, e.h*0.32, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // black chest plates (bio-suit segments)
+      ctx.fillStyle = '#0d0d0d';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.5, e.y + e.h*0.44, e.w*0.2, e.h*0.22, 0, 0, Math.PI*2);
+      ctx.fill();
+      // side chest plates
+      ctx.fillRect(e.x + e.w*0.18, e.y + e.h*0.4, e.w*0.1, e.h*0.16);
+      ctx.fillRect(e.x + e.w*0.72, e.y + e.h*0.4, e.w*0.1, e.h*0.16);
+
+      // shoulders (green armor)
+      ctx.fillStyle = '#5bc236';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.2, e.y + e.h*0.36, e.w*0.12, e.h*0.1, -0.3, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.8, e.y + e.h*0.36, e.w*0.12, e.h*0.1, 0.3, 0, Math.PI*2);
+      ctx.fill();
+
+      // upper arms (green)
+      ctx.fillRect(e.x + e.w*0.1, e.y + e.h*0.38, e.w*0.14, e.h*0.18);
+      ctx.fillRect(e.x + e.w*0.76, e.y + e.h*0.38, e.w*0.14, e.h*0.18);
+
+      // forearms (black)
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(e.x + e.w*0.08, e.y + e.h*0.52, e.w*0.12, e.h*0.16);
+      ctx.fillRect(e.x + e.w*0.8, e.y + e.h*0.52, e.w*0.12, e.h*0.16);
+
+      // hands (pale)
+      ctx.fillStyle = '#e8e8e8';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.12, e.y + e.h*0.7, e.w*0.055, e.h*0.04, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.88, e.y + e.h*0.7, e.w*0.055, e.h*0.04, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // neck (black)
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(e.x + e.w*0.42, e.y + e.h*0.26, e.w*0.16, e.h*0.08);
+
+      // head crown (black bio-armor with tall crest)
+      ctx.fillStyle = '#0d0d0d';
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.5, e.y - e.h*0.25);
+      ctx.lineTo(e.x + e.w*0.48, e.y - e.h*0.18);
+      ctx.lineTo(e.x + e.w*0.28, e.y + e.h*0.1);
+      ctx.lineTo(e.x + e.w*0.32, e.y + e.h*0.26);
+      ctx.lineTo(e.x + e.w*0.68, e.y + e.h*0.26);
+      ctx.lineTo(e.x + e.w*0.72, e.y + e.h*0.1);
+      ctx.lineTo(e.x + e.w*0.52, e.y - e.h*0.18);
+      ctx.closePath();
+      ctx.fill();
+
+      // side head plates
+      ctx.fillRect(e.x + e.w*0.22, e.y + e.h*0.16, e.w*0.08, e.h*0.1);
+      ctx.fillRect(e.x + e.w*0.7, e.y + e.h*0.16, e.w*0.08, e.h*0.1);
+
+      // face (pale green)
+      ctx.fillStyle = '#d4edd2';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.22, e.w*0.16, e.h*0.11, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // eyes (intense blue-green)
+      ctx.fillStyle = '#00d4ff';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.44, e.y + e.h*0.2, e.w*0.045, e.h*0.035, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.56, e.y + e.h*0.2, e.w*0.045, e.h*0.035, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // black pupils
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(e.x + e.w*0.44, e.y + e.h*0.2, e.w*0.02, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(e.x + e.w*0.56, e.y + e.h*0.2, e.w*0.02, 0, Math.PI*2);
+      ctx.fill();
+
+      // mouth (menacing smirk)
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(e.x + e.w*0.5, e.y + e.h*0.26, e.w*0.08, 0.2, Math.PI-0.2);
+      ctx.stroke();
+
+      // bio spots on torso (dark green hexagonal pattern)
+      ctx.fillStyle = '#1f5a2b';
+      const spotPositions = [
+        [0.38, 0.42], [0.48, 0.4], [0.62, 0.42],
+        [0.32, 0.5], [0.5, 0.48], [0.68, 0.5],
+        [0.36, 0.58], [0.52, 0.56], [0.64, 0.58]
+      ];
+      spotPositions.forEach(([sx, sy]) => {
+        ctx.beginPath();
+        ctx.arc(e.x + e.w*sx, e.y + e.h*sy, e.w*0.035, 0, Math.PI*2);
+        ctx.fill();
+      });
+
+      // shoulder spots
+      for(let i = 0; i < 3; i++){
+        ctx.beginPath();
+        ctx.arc(e.x + e.w*(0.16 + i*0.03), e.y + e.h*(0.38 + i*0.02), e.w*0.025, 0, Math.PI*2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(e.x + e.w*(0.84 - i*0.03), e.y + e.h*(0.38 + i*0.02), e.w*0.025, 0, Math.PI*2);
+        ctx.fill();
+      }
+
+      // energy aura when strong
+      if(e.hp > 1){
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = '#7bed9f';
+        ctx.beginPath();
+        ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*0.95, e.h*1.05, 0, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // Draw boss enemy (Beerus-inspired full body - original art)
+    function drawBoss(e){
+      ctx.save();
+
+      // ears (tall, pointed)
+      ctx.fillStyle = '#7b2cbf';
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.28, e.y + e.h*0.12);
+      ctx.lineTo(e.x + e.w*0.18, e.y - e.h*0.25);
+      ctx.lineTo(e.x + e.w*0.38, e.y + e.h*0.08);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.72, e.y + e.h*0.12);
+      ctx.lineTo(e.x + e.w*0.82, e.y - e.h*0.25);
+      ctx.lineTo(e.x + e.w*0.62, e.y + e.h*0.08);
+      ctx.closePath();
+      ctx.fill();
+
+      // torso (purple)
+      ctx.fillStyle = '#7b2cbf';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.55, e.w*0.28, e.h*0.22, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // chest/abdomen detail (darker purple)
+      ctx.fillStyle = '#6a25a8';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.6, e.w*0.16, e.h*0.12, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // arms
+      ctx.fillStyle = '#7b2cbf';
+      ctx.fillRect(e.x + e.w*0.12, e.y + e.h*0.52, e.w*0.16, e.h*0.18);
+      ctx.fillRect(e.x + e.w*0.72, e.y + e.h*0.52, e.w*0.16, e.h*0.18);
+
+      // hands
+      ctx.fillStyle = '#a56bff';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.16, e.y + e.h*0.7, e.w*0.06, e.h*0.06, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.84, e.y + e.h*0.7, e.w*0.06, e.h*0.06, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // sash
+      ctx.fillStyle = '#2b6bff';
+      ctx.fillRect(e.x + e.w*0.24, e.y + e.h*0.66, e.w*0.52, e.h*0.05);
+      ctx.fillStyle = '#1e5ba8';
+      ctx.fillRect(e.x + e.w*0.24, e.y + e.h*0.70, e.w*0.52, e.h*0.03);
+
+      // legs
+      ctx.fillStyle = '#7b2cbf';
+      ctx.fillRect(e.x + e.w*0.3, e.y + e.h*0.72, e.w*0.16, e.h*0.22);
+      ctx.fillRect(e.x + e.w*0.54, e.y + e.h*0.72, e.w*0.16, e.h*0.22);
+
+      // feet
+      ctx.fillStyle = '#a56bff';
+      ctx.fillRect(e.x + e.w*0.28, e.y + e.h*0.92, e.w*0.2, e.h*0.06);
+      ctx.fillRect(e.x + e.w*0.52, e.y + e.h*0.92, e.w*0.2, e.h*0.06);
+
+      // head shape
+      ctx.fillStyle = '#7b2cbf';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.3, e.w*0.3, e.h*0.24, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // muzzle / lower face
+      ctx.fillStyle = '#8a3be6';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.4, e.w*0.22, e.h*0.16, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // eyes (black)
+      ctx.fillStyle = '#111111';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.4, e.y + e.h*0.28, e.w*0.06, e.h*0.04, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.6, e.y + e.h*0.28, e.w*0.06, e.h*0.04, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      // nose and mouth
+      ctx.fillRect(e.x + e.w*0.48, e.y + e.h*0.33, e.w*0.04, e.h*0.03);
+      ctx.strokeStyle = '#1a1a1a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(e.x + e.w/2, e.y + e.h*0.43, e.w*0.08, 0, Math.PI, false);
+      ctx.stroke();
+
+      // cheek accents
+      ctx.strokeStyle = '#a56bff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.32, e.y + e.h*0.34);
+      ctx.lineTo(e.x + e.w*0.26, e.y + e.h*0.36);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.68, e.y + e.h*0.34);
+      ctx.lineTo(e.x + e.w*0.74, e.y + e.h*0.36);
+      ctx.stroke();
+
       ctx.restore();
     }
 
@@ -751,7 +1030,303 @@
       ctx.restore();
     }
 
-    function variantHp(e){ return e.variant === 'jiren' ? 5 : (e.variant === 'boss' ? 5 : (e.variant === 'strong' ? 3 : 1)); }
+    function drawPiccoloAlly(e){
+      ctx.save();
+      // head
+      ctx.fillStyle = '#5dbb3a';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.2, e.w*0.2, e.h*0.16, 0, 0, Math.PI*2);
+      ctx.fill();
+      // antenna
+      ctx.strokeStyle = '#5dbb3a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.46, e.y + e.h*0.08);
+      ctx.lineTo(e.x + e.w*0.4, e.y - e.h*0.06);
+      ctx.stroke();
+      // torso
+      ctx.fillStyle = '#5dbb3a';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.46, e.w*0.22, e.h*0.2, 0, 0, Math.PI*2);
+      ctx.fill();
+      // arm wraps
+      ctx.fillStyle = '#e0b4b4';
+      ctx.fillRect(e.x + e.w*0.12, e.y + e.h*0.36, e.w*0.16, e.h*0.18);
+      ctx.fillRect(e.x + e.w*0.72, e.y + e.h*0.36, e.w*0.16, e.h*0.18);
+      // purple gi (legs)
+      ctx.fillStyle = '#6a33a8';
+      ctx.fillRect(e.x + e.w*0.28, e.y + e.h*0.62, e.w*0.18, e.h*0.28);
+      ctx.fillRect(e.x + e.w*0.54, e.y + e.h*0.62, e.w*0.18, e.h*0.28);
+      // blue sash
+      ctx.fillStyle = '#2b6bff';
+      ctx.fillRect(e.x + e.w*0.28, e.y + e.h*0.56, e.w*0.44, e.h*0.05);
+      // eyes
+      ctx.fillStyle = '#111';
+      ctx.fillRect(e.x + e.w*0.42, e.y + e.h*0.2, e.w*0.06, 2);
+      ctx.fillRect(e.x + e.w*0.52, e.y + e.h*0.2, e.w*0.06, 2);
+      ctx.restore();
+    }
+
+    function drawDyspo(e){
+      ctx.save();
+      // Dyspo - rabbit-like Pride Trooper with purple fur
+      
+      // Rabbit ears (tall and pointed)
+      ctx.fillStyle = '#8b7fc7';
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.35, e.y + e.h*0.08);
+      ctx.lineTo(e.x + e.w*0.3, e.y - e.h*0.25);
+      ctx.lineTo(e.x + e.w*0.4, e.y + e.h*0.05);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.65, e.y + e.h*0.08);
+      ctx.lineTo(e.x + e.w*0.7, e.y - e.h*0.25);
+      ctx.lineTo(e.x + e.w*0.6, e.y + e.h*0.05);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Inner ear (lighter purple)
+      ctx.fillStyle = '#a89fdb';
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.36, e.y + e.h*0.08);
+      ctx.lineTo(e.x + e.w*0.33, e.y - e.h*0.18);
+      ctx.lineTo(e.x + e.w*0.38, e.y + e.h*0.06);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.64, e.y + e.h*0.08);
+      ctx.lineTo(e.x + e.w*0.67, e.y - e.h*0.18);
+      ctx.lineTo(e.x + e.w*0.62, e.y + e.h*0.06);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Legs (black uniform)
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(e.x + e.w*0.3, e.y + e.h*0.7, e.w*0.16, e.h*0.3);
+      ctx.fillRect(e.x + e.w*0.54, e.y + e.h*0.7, e.w*0.16, e.h*0.3);
+      
+      // Gold/yellow boots
+      ctx.fillStyle = '#f1c40f';
+      ctx.fillRect(e.x + e.w*0.28, e.y + e.h*0.92, e.w*0.2, e.h*0.08);
+      ctx.fillRect(e.x + e.w*0.52, e.y + e.h*0.92, e.w*0.2, e.h*0.08);
+      
+      // Black torso armor
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.54, e.w*0.36, e.h*0.3, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Red Pride Trooper chest emblem
+      ctx.fillStyle = '#e74c3c';
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w/2, e.y + e.h*0.44);
+      ctx.lineTo(e.x + e.w*0.6, e.y + e.h*0.56);
+      ctx.lineTo(e.x + e.w/2, e.y + e.h*0.62);
+      ctx.lineTo(e.x + e.w*0.4, e.y + e.h*0.56);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Yellow belt
+      ctx.fillStyle = '#f1c40f';
+      ctx.fillRect(e.x + e.w*0.32, e.y + e.h*0.68, e.w*0.36, e.h*0.05);
+      
+      // Arms (black uniform)
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(e.x + e.w*0.1, e.y + e.h*0.44, e.w*0.14, e.h*0.22);
+      ctx.fillRect(e.x + e.w*0.76, e.y + e.h*0.44, e.w*0.14, e.h*0.22);
+      
+      // Yellow shoulder pads
+      ctx.fillStyle = '#f1c40f';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.17, e.y + e.h*0.44, e.w*0.12, e.h*0.1, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.83, e.y + e.h*0.44, e.w*0.12, e.h*0.1, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Purple paws/hands
+      ctx.fillStyle = '#8b7fc7';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.1, e.y + e.h*0.66, e.w*0.08, e.h*0.08, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.9, e.y + e.h*0.66, e.w*0.08, e.h*0.08, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Head (purple fur)
+      ctx.fillStyle = '#8b7fc7';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.28, e.w*0.3, e.h*0.22, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Face markings (white/gray around eyes)
+      ctx.fillStyle = '#d4d4d4';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.42, e.y + e.h*0.26, e.w*0.08, e.h*0.08, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.58, e.y + e.h*0.26, e.w*0.08, e.h*0.08, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Eyes (red/pink with black pupils)
+      ctx.fillStyle = '#ff69b4';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.42, e.y + e.h*0.26, e.w*0.05, e.h*0.05, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.58, e.y + e.h*0.26, e.w*0.05, e.h*0.05, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Black pupils
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.42, e.y + e.h*0.26, e.w*0.025, e.h*0.025, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.58, e.y + e.h*0.26, e.w*0.025, e.h*0.025, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Small nose
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.32, e.w*0.03, e.h*0.025, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Mouth line
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w/2, e.y + e.h*0.34);
+      ctx.lineTo(e.x + e.w/2, e.y + e.h*0.37);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawKidBuu(e){
+      ctx.save();
+      // Kid Buu - Lean pink impish villain
+      
+      // White baggy pants
+      ctx.fillStyle = '#f5f5f5';
+      ctx.fillRect(e.x + e.w*0.28, e.y + e.h*0.58, e.w*0.44, e.h*0.36);
+      
+      // Pants wrinkles/folds
+      ctx.strokeStyle = '#d0d0d0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w*0.5, e.y + e.h*0.6);
+      ctx.lineTo(e.x + e.w*0.5, e.y + e.h*0.92);
+      ctx.stroke();
+      
+      // Gray boots
+      ctx.fillStyle = '#9e9e9e';
+      ctx.fillRect(e.x + e.w*0.3, e.y + e.h*0.92, e.w*0.18, e.h*0.08);
+      ctx.fillRect(e.x + e.w*0.52, e.y + e.h*0.92, e.w*0.18, e.h*0.08);
+      
+      // Yellow/gold belt
+      ctx.fillStyle = '#ffd700';
+      ctx.fillRect(e.x + e.w*0.32, e.y + e.h*0.56, e.w*0.36, e.h*0.05);
+      // Belt buckle
+      ctx.fillStyle = '#ffeb3b';
+      ctx.fillRect(e.x + e.w*0.46, e.y + e.h*0.555, e.w*0.08, e.h*0.04);
+      
+      // Skinny pink legs (showing above pants)
+      ctx.fillStyle = '#ff9eb8';
+      ctx.fillRect(e.x + e.w*0.36, e.y + e.h*0.88, e.w*0.1, e.h*0.06);
+      ctx.fillRect(e.x + e.w*0.54, e.y + e.h*0.88, e.w*0.1, e.h*0.06);
+      
+      // Lean torso (pink, thin)
+      ctx.fillStyle = '#ff9eb8';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.46, e.w*0.22, e.h*0.18, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Torso definition (darker pink lines)
+      ctx.strokeStyle = '#ff6b9d';
+      ctx.lineWidth = 1.5;
+      // Abs
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w/2, e.y + e.h*0.38);
+      ctx.lineTo(e.x + e.w/2, e.y + e.h*0.54);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(e.x + e.w*0.46, e.y + e.h*0.42, e.w*0.06, -0.5, 0.5);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(e.x + e.w*0.54, e.y + e.h*0.42, e.w*0.06, Math.PI-0.5, Math.PI+0.5);
+      ctx.stroke();
+      
+      // Skinny arms
+      ctx.fillStyle = '#ff9eb8';
+      ctx.fillRect(e.x + e.w*0.14, e.y + e.h*0.4, e.w*0.08, e.h*0.24);
+      ctx.fillRect(e.x + e.w*0.78, e.y + e.h*0.4, e.w*0.08, e.h*0.24);
+      
+      // Black wristbands
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(e.x + e.w*0.12, e.y + e.h*0.58, e.w*0.12, e.h*0.06);
+      ctx.fillRect(e.x + e.w*0.76, e.y + e.h*0.58, e.w*0.12, e.h*0.06);
+      
+      // Hands (pink, small)
+      ctx.fillStyle = '#ff9eb8';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.16, e.y + e.h*0.68, e.w*0.05, e.h*0.04, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w*0.84, e.y + e.h*0.68, e.w*0.05, e.h*0.04, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Neck (thin)
+      ctx.fillStyle = '#ff9eb8';
+      ctx.fillRect(e.x + e.w*0.45, e.y + e.h*0.3, e.w*0.1, e.h*0.06);
+      
+      // Head (smaller, rounder)
+      ctx.fillStyle = '#ff9eb8';
+      ctx.beginPath();
+      ctx.ellipse(e.x + e.w/2, e.y + e.h*0.22, e.w*0.24, e.h*0.18, 0, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Head pores/holes (darker pink, scattered)
+      ctx.fillStyle = '#ff6b9d';
+      const porePositions = [
+        [0.38, 0.18], [0.48, 0.14], [0.62, 0.18],
+        [0.34, 0.24], [0.56, 0.24], [0.66, 0.22],
+        [0.42, 0.28], [0.58, 0.28]
+      ];
+      porePositions.forEach(([px, py]) => {
+        ctx.beginPath();
+        ctx.arc(e.x + e.w*px, e.y + e.h*py, e.w*0.018, 0, Math.PI*2);
+        ctx.fill();
+      });
+      
+      // Thin antenna (top of head)
+      ctx.fillStyle = '#ff6b9d';
+      ctx.beginPath();
+      ctx.moveTo(e.x + e.w/2, e.y + e.h*0.06);
+      ctx.quadraticCurveTo(e.x + e.w*0.56, e.y - e.h*0.08, e.x + e.w*0.52, e.y - e.h*0.22);
+      ctx.lineTo(e.x + e.w*0.5, e.y - e.h*0.2);
+      ctx.quadraticCurveTo(e.x + e.w*0.54, e.y - e.h*0.06, e.x + e.w/2, e.y + e.h*0.08);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Antenna bulb
+      ctx.beginPath();
+      ctx.arc(e.x + e.w*0.52, e.y - e.h*0.22, e.w*0.04, 0, Math.PI*2);
+      ctx.fill();
+      
+      // Small beady eyes (black)
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.arc(e.x + e.w*0.44, e.y + e.h*0.22, e.w*0.02, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(e.x + e.w*0.56, e.y + e.h*0.22, e.w*0.02, 0, Math.PI*2);
+      ctx.fill();
+      
+      ctx.restore();
+    }
+
+    function variantHp(e){ return e.variant === 'jiren' ? 5 : (e.variant === 'boss' ? 5 : (e.variant === 'strong' ? 3 : (e.variant === 'kidbuu' ? 5 : (e.variant === 'dyspo' ? 3 : 1)))); }
 
     // Draw pickup
     function drawPickup(p){
@@ -784,10 +1359,73 @@
     let spawnTimer = 0;
     let cycleTimer = 0; // ms counter for flight windows (30s cycle)
     let flashTimer = 0; // ms, visual flash when board-clear used
+    let enemyShootTimer = 0; // ms counter for synchronized enemy shooting
     // damage per second when in contact with enemy
     const contactDPS = 20; // HP per second
     function update(dt){
+      // Update shield duration and cooldown
+      if(shieldOn){
+        shieldDuration = Math.max(0, shieldDuration - dt);
+        if(shieldDuration <= 0){
+          shieldOn = false;
+          shieldCooldown = 2000; // 2 second cooldown before reuse
+        }
+      }
+      if(shieldCooldown > 0){
+        shieldCooldown = Math.max(0, shieldCooldown - dt);
+      }
+
       if(winGame){
+        if(keys['r'] && keys['s']){
+          resetGame();
+        }
+        return;
+      }
+
+      if(shopOpen){
+        // Shop controls: 1-8 to buy/select, 9 for shield
+        const buyKey = ['1','2','3','4','5','6','7','8'].findIndex(k => keys[k]);
+        if(buyKey >= 0){
+          const item = characterCatalog[buyKey];
+          if(item){
+            if(item.type === 'playable'){
+              // playable skins
+              if(item.unlocked){
+                currentAvatar = item.key;
+              } else if(score >= item.cost){
+                score -= item.cost;
+                item.unlocked = true;
+                currentAvatar = item.key;
+                tone(900, 0.12, 'sine', 0.18);
+              } else {
+                tone(180, 0.12, 'sawtooth', 0.12);
+              }
+            } else if(item.type === 'ally'){
+              // ally skins (cosmetic for now, we can expand later)
+              if(item.unlocked){
+                tone(520, 0.08, 'sine', 0.12);
+              } else if(score >= item.cost){
+                score -= item.cost;
+                item.unlocked = true;
+                tone(980, 0.12, 'sine', 0.18);
+              } else {
+                tone(180, 0.12, 'sawtooth', 0.12);
+              }
+            }
+          }
+        }
+        // Press 9 to buy shield
+        if(keys['9']){
+          if(shieldUnlocked){
+            tone(520, 0.08, 'sine', 0.12);
+          } else if(score >= shieldCost){
+            score -= shieldCost;
+            shieldUnlocked = true;
+            tone(980, 0.12, 'sine', 0.18);
+          } else {
+            tone(180, 0.12, 'sawtooth', 0.12);
+          }
+        }
         return;
       }
       // H A C K 1 cheat code (takes priority): unlock Ultra Mode instantly
@@ -832,6 +1470,17 @@
         flyCheatUsed = false;
       }
 
+      // Q cheat code: quick 10000 points
+      if(keys['q']){
+        if(!qCheatUsed){
+          score += 10000;
+          qCheatUsed = true;
+          tone(1100, 0.2, 'sine', 0.18);
+        }
+      } else if(!keys['q']){
+        qCheatUsed = false;
+      }
+
       if(jirenSummonCooldown > 0){
         jirenSummonCooldown = Math.max(0, jirenSummonCooldown - dt);
       }
@@ -849,6 +1498,8 @@
           startGodMiniGame();
         } else if(retryPending === 'ultra'){
           startUltraMiniGame();
+        } else if(retryPending === 'ally'){
+          startAllyMiniGame();
         }
       }
       
@@ -858,6 +1509,10 @@
       const up = keys['arrowup'];
       const attack = keys['z'];
       const blast = keys['x'];
+
+      if(allyReady && !allyUnlocked && !inMiniGame && !inUltraMiniGame && !inAllyMiniGame && !retryPending){
+        if(keys['p']) startAllyMiniGame();
+      }
 
       if(left) { player.vx = Math.max(player.vx - 0.6, -4); player.facing = -1; }
       if(right){ player.vx = Math.min(player.vx + 0.6, 4); player.facing = 1; }
@@ -870,16 +1525,25 @@
       else if(player.charging){
         // release blast
         const power = Math.max(8, 6 + Math.floor(player.energy/20));
+        const isFullCharge = player.energy >= 100;
         // if player has enough coins, fire a super blast (piercing)
         if(coinCount >= 10){
           const superProj = {type:'super', x:player.x + player.w/2 + (player.facing>0?28:-28), y:player.y+22, w:28, h:16, vx: player.facing * (6 + power*0.6), power, hitsRemaining: 6, lifespan: 3500, created: Date.now()};
           entities.push(superProj);
+          if(isFullCharge){
+            const superProj2 = {type:'super', x:player.x + player.w/2 + (player.facing>0?28:-28), y:player.y+32, w:28, h:16, vx: player.facing * (6 + power*0.6), power, hitsRemaining: 6, lifespan: 3500, created: Date.now()};
+            entities.push(superProj2);
+          }
           coinCount = 0; // consume coins
           tone(320, 0.4, 'sawtooth', 0.16);
         } else {
           // regular projectile (single-kill)
           const proj = {type:'proj', x:player.x + player.w/2 + (player.facing>0?20:-20), y:player.y+24, w:12, h:8, vx: player.facing * (6 + power*0.6), power};
           entities.push(proj);
+          if(isFullCharge){
+            const proj2 = {type:'proj', x:player.x + player.w/2 + (player.facing>0?20:-20), y:player.y+34, w:12, h:8, vx: player.facing * (6 + power*0.6), power};
+            entities.push(proj2);
+          }
           tone(180 + power*30, 0.12, 'sawtooth', 0.12);
         }
         player.charging = false; player.energy = 0;
@@ -905,32 +1569,36 @@
           e.x += (targetX - e.x) * 0.08;
           e.y += (targetY - e.y) * 0.08;
 
-          // damage enemies on contact with a short cooldown
-          for(let j = entities.length-1; j>=0; j--){ const t = entities[j];
-            if(t.type === 'enemy' && collide(e,t)){
-              const now = Date.now();
-              if(now - (e.lastHit || 0) > 280){
-                t.hp = (typeof t.hp === 'number') ? t.hp : 1;
-                t.hp -= 1;
-                e.lastHit = now;
-                tone(520,0.05,'triangle',0.08);
-                if(t.hp <= 0){
-                  if(inMiniGame && t.variant === 'boss'){
-                    miniGameBossesKilled += 1;
+          if(e.variant === 'jiren'){
+            // damage enemies on contact with a short cooldown
+            for(let j = entities.length-1; j>=0; j--){ const t = entities[j];
+              if(t.type === 'enemy' && collide(e,t)){
+                const now = Date.now();
+                if(now - (e.lastHit || 0) > 280){
+                  t.hp = (typeof t.hp === 'number') ? t.hp : 1;
+                  t.hp -= 1;
+                  e.lastHit = now;
+                  tone(520,0.05,'triangle',0.08);
+                  if(t.hp <= 0){
+                    if(inMiniGame && t.variant === 'boss'){
+                      miniGameBossesKilled += 1;
+                    }
+                    if(inUltraMiniGame && t.variant === 'jiren'){
+                      ultraGameJirenKilled = true;
+                      jirenUnlocked = true;
+                    }
+                    if(t.variant === 'jiren') allyReady = true;
+                    recordAllyMiniKill(t.variant);
+                    if(t.variant === 'boss' && !inMiniGame){
+                      for(let c=0;c<3;c++) spawnPickup(t.x + t.w/2 + (c-1)*10, t.y + t.h/2 + (c%2? -6:4));
+                    }
+                    if(t.variant === 'jiren' && !inUltraMiniGame){
+                      for(let c=0;c<7;c++) spawnPickup(t.x + t.w/2 + (c-3)*8, t.y + t.h/2 + (c%2? -6:4));
+                    }
+                    score += (t.variant === 'strong') ? 180 : (t.variant === 'boss' ? 300 : 35);
+                    if(!inMiniGame && !inUltraMiniGame && !inAllyMiniGame) addKills(1);
+                    entities.splice(j,1);
                   }
-                  if(inUltraMiniGame && t.variant === 'jiren'){
-                    ultraGameJirenKilled = true;
-                    jirenUnlocked = true;
-                  }
-                  if(t.variant === 'boss' && !inMiniGame){
-                    for(let c=0;c<3;c++) spawnPickup(t.x + t.w/2 + (c-1)*10, t.y + t.h/2 + (c%2? -6:4));
-                  }
-                  if(t.variant === 'jiren' && !inUltraMiniGame){
-                    for(let c=0;c<7;c++) spawnPickup(t.x + t.w/2 + (c-3)*8, t.y + t.h/2 + (c%2? -6:4));
-                  }
-                  score += (t.variant === 'strong') ? 180 : (t.variant === 'boss' ? 300 : 35);
-                  if(!inMiniGame && !inUltraMiniGame) addKills(1);
-                  entities.splice(j,1);
                 }
               }
             }
@@ -945,7 +1613,8 @@
           e.x += e.vx;
           // if enemy touches player, drain health over time
           if(collide(player, e)){
-            player.hp = Math.max(0, player.hp - (contactDPS * (dt/1000)));
+            const shieldFactor = shieldOn ? 0.5 : 1;
+            player.hp = Math.max(0, player.hp - (contactDPS * (dt/1000) * shieldFactor));
             // small knockback to avoid instant trapping
             player.vx = -e.vx * 0.6;
             tone(220, 0.04, 'sine', 0.06);
@@ -964,25 +1633,30 @@
           for(let j=entities.length-1;j>=0;j--){ const t=entities[j]; if(t.type==='enemy' && collide(e,t)){
               // projectile damage based on god/ultra mode
               t.hp = (typeof t.hp === 'number') ? t.hp : 1;
+              const resistance = t.blastResistance || 1.0;
+              let baseDamage = 0;
               if(t.variant === 'jiren' && inUltraMiniGame && !ultraMode){
-                t.hp -= 1; // requires 10 blasts in the Jiren mini game
+                baseDamage = 1; // requires 10 blasts in the Jiren mini game
               } else if(ultraMode){
                 // Ultra Mode: instant kill normal/strong, 5 damage to boss/jiren
-                if(t.variant === 'normal' || t.variant === 'strong'){
-                  t.hp = 0; // instant kill
+                if(t.variant === 'normal' || t.variant === 'strong' || t.variant === 'dyspo'){
+                  baseDamage = 999; // instant kill (resistance will still apply)
                 } else {
-                  t.hp -= 5; // 5 damage to bosses and jiren
+                  baseDamage = 5; // 5 damage to bosses, kidbuu, and jiren
                 }
               } else if(godMode){
                 // God Mode: kills normal enemies instantly, 2 damage to strong/boss
                 if(t.variant === 'normal'){
-                  t.hp = 0; // instant kill
+                  baseDamage = 999; // instant kill
                 } else {
-                  t.hp -= 2; // 2 damage to strong and boss
+                  baseDamage = 2; // 2 damage to strong and boss
                 }
               } else {
-                t.hp -= 1; // normal damage
+                baseDamage = 1; // normal damage
               }
+              // Apply blast resistance
+              const actualDamage = baseDamage * resistance;
+              t.hp -= actualDamage;
               // hit feedback
               tone(440,0.06,'triangle',0.12);
               if(t.hp <= 0){
@@ -994,6 +1668,8 @@
                   ultraGameJirenKilled = true;
                   jirenUnlocked = true;
                 }
+                if(t.variant === 'jiren') allyReady = true;
+                recordAllyMiniKill(t.variant);
                 // Only bosses drop coins — spawn 3 guaranteed coins at boss death
                 if(t.variant === 'boss' && !inMiniGame){
                   for(let c=0;c<3;c++) spawnPickup(t.x + t.w/2 + (c-1)*10, t.y + t.h/2 + (c%2? -6:4));
@@ -1006,7 +1682,7 @@
                 }
                 // scoring: stronger enemies give more
                 score += (t.variant === 'strong') ? 180 : (t.variant === 'boss' ? 300 : 35);
-                if(!inMiniGame && !inUltraMiniGame) addKills(1);
+                if(!inMiniGame && !inUltraMiniGame && !inAllyMiniGame) addKills(1);
                 entities.splice(j,1);
               }
               // remove projectile after hit
@@ -1021,25 +1697,30 @@
           for(let j=entities.length-1;j>=0;j--){ const t = entities[j]; if(t.type==='enemy' && collide(e,t)){
               // super damage based on god/ultra mode
               t.hp = (typeof t.hp === 'number') ? t.hp : 1;
+              const resistance = t.blastResistance || 1.0;
+              let baseDamage = 0;
               if(t.variant === 'jiren' && inUltraMiniGame && !ultraMode){
-                t.hp -= 1; // requires 10 blasts in the Jiren mini game
+                baseDamage = 1; // requires 10 blasts in the Jiren mini game
               } else if(ultraMode){
                 // Ultra Mode super: instant kill normal/strong, 5 damage to bosses/jiren
-                if(t.variant === 'normal' || t.variant === 'strong'){
-                  t.hp = 0;
+                if(t.variant === 'normal' || t.variant === 'strong' || t.variant === 'dyspo'){
+                  baseDamage = 999;
                 } else {
-                  t.hp -= 5;
+                  baseDamage = 5;
                 }
               } else if(godMode){
                 // God Mode super: instant kill normal, 5 damage to strong/boss
                 if(t.variant === 'normal'){
-                  t.hp = 0;
+                  baseDamage = 999;
                 } else {
-                  t.hp -= 5;
+                  baseDamage = 5;
                 }
               } else {
-                t.hp -= 3; // normal super damage
+                baseDamage = 3; // normal super damage
               }
+              // Apply blast resistance
+              const actualDamage = baseDamage * resistance;
+              t.hp -= actualDamage;
               tone(720,0.06,'triangle',0.14);
               if(t.hp <= 0){
                 // Track mini game boss kills
@@ -1050,12 +1731,14 @@
                   ultraGameJirenKilled = true;
                   jirenUnlocked = true;
                 }
+                if(t.variant === 'jiren') allyReady = true;
+                recordAllyMiniKill(t.variant);
                 // Only bosses drop coins — spawn 3 guaranteed coins at boss death
                 if(t.variant === 'boss' && !inMiniGame){
                   for(let c=0;c<3;c++) spawnPickup(t.x + t.w/2 + (c-1)*10, t.y + t.h/2 + (c%2? -6:4));
                 }
                 score += (t.variant === 'strong') ? 220 : (t.variant === 'boss' ? 500 : 60);
-                if(!inMiniGame && !inUltraMiniGame) addKills(1);
+                if(!inMiniGame && !inUltraMiniGame && !inAllyMiniGame) addKills(1);
                 entities.splice(j,1);
               }
               e.hitsRemaining = (typeof e.hitsRemaining === 'number') ? e.hitsRemaining - 1 : 0;
@@ -1076,10 +1759,27 @@
             }
           }
         }
+        if(e.type==='enemyProj'){
+          // Enemy projectile: move and damage player on collision
+          e.x += e.vx;
+          e.y += e.vy;
+          if(collide(player, e)){
+            const shieldFactor = shieldOn ? 0.5 : 1;
+            player.hp = Math.max(0, player.hp - (e.damage * shieldFactor));
+            tone(320, 0.08, 'sine', 0.12);
+            entities.splice(i, 1);
+          }
+          // Remove if off-screen
+          if(e.x < -50 || e.x > W + 50 || e.y < -50 || e.y > H + 50){
+            entities.splice(i, 1);
+          }
+        }
       }
 
-      // God mini game trigger at 50 kills
-      if(!miniGameTriggered && killCount >= 50 && !inMiniGame && !retryPending){
+      const godMiniGameGoal = 50;
+      const ultraMiniGameGoal = 100;
+      // God mini game trigger at 100 kills
+      if(!miniGameTriggered && killCount >= godMiniGameGoal && !inMiniGame && !retryPending){
         startGodMiniGame();
       }
 
@@ -1087,13 +1787,17 @@
       if(inMiniGame && miniGameBossesKilled >= 5){
         inMiniGame = false;
         godMode = true;
+        if(godModeUnlockKills === null){
+          godModeUnlockKills = killCount;
+        }
         player.hp = 100;
         tone(880, 0.8, 'sine', 0.2);
         tone(1100, 0.8, 'sine', 0.2);
       }
 
-      // Ultra Mode trigger at 100 kills (only if God Mode unlocked)
-      ultraReady = (killCount >= 100 && godMode && !inUltraMiniGame && !retryPending && !ultraMode);
+      // Ultra Mode trigger at 100 kills after God Mode
+      const killsSinceGod = godModeUnlockKills === null ? 0 : Math.max(0, killCount - godModeUnlockKills);
+      ultraReady = (godMode && killsSinceGod >= ultraMiniGameGoal && !inUltraMiniGame && !retryPending && !ultraMode);
       if(ultraReady && !ultraModeTriggered){
         startUltraMiniGame();
       }
@@ -1117,9 +1821,25 @@
         ultraMode = true;
         godMode = true; // keep god powers too
         player.hp = 100;
+        allyReady = true;
         tone(880, 0.8, 'sine', 0.2);
         tone(1100, 0.8, 'sine', 0.2);
         tone(1320, 0.8, 'sine', 0.2);
+      }
+
+      if(inAllyMiniGame){
+        const activeEnemies = entities.filter(ent => ent.type === 'enemy').length;
+        if(activeEnemies < 3) spawnAllyMiniEnemy();
+        const done = allyMiniCounts.normal >= allyMiniGoal && allyMiniCounts.strong >= allyMiniGoal && allyMiniCounts.boss >= allyMiniGoal && allyMiniCounts.jiren >= allyMiniGoal;
+        if(done){
+          inAllyMiniGame = false;
+          allyUnlocked = true;
+          if(!entities.some(ent => ent.type === 'ally' && ent.variant === 'piccolo')){
+            entities.push({type:'ally', variant:'piccolo', x: player.x + 60, y: player.y, w:44, h:60, vx:0, created: Date.now(), lifespan: Infinity, lastHit: 0});
+          }
+          player.hp = 100;
+          tone(900, 0.6, 'sine', 0.2);
+        }
       }
 
       if(!formsUnlocked && godMode && ultraMode){
@@ -1136,9 +1856,43 @@
       }
       
       // spawn logic (reduced spawn frequency) - disabled during mini games
-      if(!inMiniGame && !inUltraMiniGame){
+      if(!inMiniGame && !inUltraMiniGame && !inAllyMiniGame){
         spawnTimer += dt;
         if(spawnTimer > 3000){ spawnEnemy(); spawnTimer = 0; }
+      }
+
+      // Enemy shooting: all enemies shoot at player every 30 seconds
+      enemyShootTimer += dt;
+      if(enemyShootTimer >= 30000){
+        enemyShootTimer = 0;
+        // Make all enemies shoot at the player
+        entities.forEach(e => {
+          if(e.type === 'enemy'){
+            const dx = player.x + player.w/2 - (e.x + e.w/2);
+            const dy = player.y + player.h/2 - (e.y + e.h/2);
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            const vx = (dx / dist) * 4; // projectile speed
+            const vy = (dy / dist) * 4;
+            const proj = {type:'enemyProj', x: e.x + e.w/2, y: e.y + e.h/2, w: 10, h: 10, vx: vx, vy: vy, damage: 15};
+            entities.push(proj);
+          }
+        });
+        tone(880, 0.15, 'triangle', 0.16);
+      }
+
+      if(allyUnlocked && !inMiniGame && !inUltraMiniGame && !inAllyMiniGame){
+        allyKillTimer += dt;
+        if(allyKillTimer >= 10000){
+          allyKillTimer = 0;
+          const targetIndex = entities.findIndex(ent => ent.type === 'enemy');
+          if(targetIndex >= 0){
+            const target = entities[targetIndex];
+            score += (target.variant === 'strong') ? 180 : (target.variant === 'boss' ? 300 : (target.variant === 'jiren' ? 400 : 35));
+            addKills(1);
+            entities.splice(targetIndex, 1);
+            tone(520, 0.08, 'triangle', 0.12);
+          }
+        }
       }
 
       // flight cycle: grant up to flyTimeMax every 30 seconds
@@ -1170,7 +1924,7 @@
       document.getElementById('score').textContent = 'Score: ' + score;
       document.getElementById('lives').textContent = 'Lives: ' + lives;
       document.getElementById('health').textContent = 'Health: ' + Math.max(0, Math.round(player.hp)) + '%';
-      document.getElementById('kills').textContent = 'Kills: ' + killCount + (killCount >= 50 || miniGameTriggered ? '' : '/50');
+      document.getElementById('kills').textContent = 'Kills: ' + killCount;
       document.getElementById('coins').textContent = 'Coins: ' + coinCount;
       document.getElementById('super').textContent = 'Super: ' + superStock;
       document.getElementById('energy').textContent = 'Energy: ' + Math.round(player.energy) + '%';
@@ -1181,6 +1935,17 @@
 
       if(formsUnlocked){
         formControls.classList.remove('hidden');
+      }
+
+      const miniGameCountdownEl = document.getElementById('miniGameCountdown');
+      if(miniGameCountdownEl){
+        let remaining = 0;
+        if(!godMode){
+          remaining = Math.max(0, godMiniGameGoal - killCount);
+        } else if(!ultraMode){
+          remaining = Math.max(0, ultraMiniGameGoal - killsSinceGod);
+        }
+        miniGameCountdownEl.textContent = String(remaining);
       }
 
       // handle death / life loss
@@ -1201,6 +1966,15 @@
           player.hp = 100;
           entities = [];
           retryPending = 'god';
+          tone(120, 0.5, 'sawtooth', 0.2);
+        }
+        // Ally mini game failure
+        else if(inAllyMiniGame){
+          inAllyMiniGame = false;
+          allyMiniCounts = { normal: 0, strong: 0, boss: 0, jiren: 0 };
+          player.hp = 100;
+          entities = [];
+          retryPending = 'ally';
           tone(120, 0.5, 'sawtooth', 0.2);
         } else {
           lives = Math.max(0, lives - 1);
@@ -1254,14 +2028,27 @@
       // draw entities
       entities.forEach(e=>{ 
         if(e.type==='enemy'){
+          // Draw blue aura for all enemies
+          ctx.save();
+          ctx.globalAlpha = 0.15;
+          ctx.fillStyle = '#4aa3ff';
+          ctx.beginPath();
+          ctx.ellipse(e.x + e.w/2, e.y + e.h/2, e.w*0.65, e.h*0.65, 0, 0, Math.PI*2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.restore();
+          
           if(e.variant === 'strong') drawStrongEnemy(e);
           else if(e.variant === 'jiren') drawJiren(e);
           else if(e.variant === 'boss') drawBoss(e);
+          else if(e.variant === 'dyspo') drawDyspo(e);
+          else if(e.variant === 'kidbuu') drawKidBuu(e);
           else drawEnemy(e);
         } else if(e.type==='ally'){
           ctx.save();
           ctx.globalAlpha = 0.85;
-          drawJiren(e);
+          if(e.variant === 'piccolo') drawPiccoloAlly(e);
+          else drawJiren(e);
           ctx.restore();
         } else if(e.type==='pickup') drawPickup(e); 
         else if(e.type==='proj'){ 
@@ -1280,10 +2067,34 @@
             ctx.fillRect(e.x-4, e.y-4, e.w+8, e.h+8);
           }
         }
+        else if(e.type==='enemyProj'){
+          // Enemy projectile: red/purple energy ball
+          ctx.save();
+          ctx.fillStyle = '#d63031';
+          ctx.beginPath();
+          ctx.arc(e.x + e.w/2, e.y + e.h/2, e.w/2, 0, Math.PI*2);
+          ctx.fill();
+          ctx.fillStyle = 'rgba(214,48,49,0.5)';
+          ctx.beginPath();
+          ctx.arc(e.x + e.w/2, e.y + e.h/2, e.w/2 + 3, 0, Math.PI*2);
+          ctx.fill();
+          ctx.restore();
+        }
       });
 
       // draw player
       drawPlayer(player);
+
+      if(shieldOn){
+        ctx.save();
+        ctx.globalAlpha = 0.18;
+        ctx.strokeStyle = '#4aa3ff';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.ellipse(player.x + player.w/2, player.y + player.h/2, 36, 48, 0, 0, Math.PI*2);
+        ctx.stroke();
+        ctx.restore();
+      }
 
       // simple UI overlay
       ctx.fillStyle = 'rgba(0,0,0,0.12)'; ctx.fillRect(12,12,200,36);
@@ -1308,7 +2119,7 @@
       if(retryPending){
         ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(W/2 - 160, 80, 320, 44);
         ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Arial';
-        const label = retryPending === 'ultra' ? 'ULTRA' : 'GOD';
+        const label = retryPending === 'ultra' ? 'ULTRA' : (retryPending === 'ally' ? 'PICCOLO' : 'GOD');
         ctx.fillText('Press START (Enter) to retry ' + label, W/2 - 145, 108);
       }
       
@@ -1316,14 +2127,14 @@
       if(godMode && !ultraMode){
         ctx.fillStyle = 'rgba(230,57,70,0.2)'; ctx.fillRect(W - 220, 12, 200, 36);
         ctx.fillStyle = '#e63946'; ctx.font = 'bold 16px Arial';
-        ctx.fillText('🔥 GOD MODE', W - 210, 36);
+        ctx.fillText('🔥 SSG', W - 210, 36);
       }
       
       // Ultra Mode indicator
       if(ultraMode){
         ctx.fillStyle = 'rgba(192,192,192,0.25)'; ctx.fillRect(W - 220, 12, 200, 36);
         ctx.fillStyle = '#c0c0c0'; ctx.font = 'bold 16px Arial';
-        ctx.fillText('⚡ ULTRA MODE', W - 210, 36);
+        ctx.fillText('⚡ UI', W - 210, 36);
       }
 
       if(ultraReady && !inUltraMiniGame){
@@ -1332,10 +2143,58 @@
         ctx.fillText('JIREN MINI GAME READY', W/2 - 120, 98);
       }
 
+      if(allyReady && !allyUnlocked && !inAllyMiniGame){
+        ctx.fillStyle = 'rgba(74,163,255,0.22)'; ctx.fillRect(W/2 - 170, 112, 340, 30);
+        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 14px Arial';
+        ctx.fillText('PICCOLO MINI GAME READY (P)', W/2 - 168, 132);
+      }
+
+      if(inAllyMiniGame){
+        ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(W/2 - 200, 20, 400, 60);
+        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 16px Arial';
+        ctx.fillText('PICCOLO MINI GAME: Defeat 5 of each enemy', W/2 - 190, 45);
+        ctx.font = '14px Arial';
+        ctx.fillText('N:' + allyMiniCounts.normal + '/5  S:' + allyMiniCounts.strong + '/5  B:' + allyMiniCounts.boss + '/5  J:' + allyMiniCounts.jiren + '/5', W/2 - 180, 65);
+      }
+
       if(jirenUnlocked){
         ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(W - 220, 54, 200, 30);
         ctx.fillStyle = '#ffffff'; ctx.font = 'bold 14px Arial';
         ctx.fillText('JIREN READY (J)', W - 208, 74);
+      }
+
+      if(shopOpen){
+        ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(W/2 - 280, 80, 560, 280);
+        ctx.fillStyle = '#ffffff'; ctx.font = 'bold 18px Arial';
+        ctx.fillText('SHOP - CHARACTERS (POINTS: ' + score + ')', W/2 - 200, 110);
+        ctx.font = '12px Arial';
+        for(let i = 0; i < characterCatalog.length; i++){
+          const item = characterCatalog[i];
+          const col = Math.floor(i / 4); // 0 for items 0-3, 1 for items 4-7
+          const row = i % 4;
+          const x = (W/2 - 260) + (col * 280);
+          const y = 140 + (row * 24);
+          let status = '';
+          if(item.type === 'enemy'){
+            status = '[ENEMY]';
+          } else if(item.unlocked){
+            status = 'UNLOCKED';
+            if(item.type === 'playable' && currentAvatar === item.key) status += ' ✓';
+          } else {
+            status = 'COST ' + item.cost;
+          }
+          const typeLetter = item.type === 'ally' ? 'A' : (item.type === 'playable' ? 'P' : 'E');
+          ctx.fillText((i+1) + '. ' + item.name + ' [' + typeLetter + '] - ' + status, x, y);
+        }
+        ctx.font = 'bold 13px Arial';
+        ctx.fillStyle = '#ffeb3b';
+        const shieldStatusText = shieldUnlocked ? (shieldDuration > 0 ? 'ACTIVE (' + Math.ceil(shieldDuration/1000) + 's)' : 'UNLOCKED') : ('COST ' + shieldCost);
+        ctx.fillText('9. SHIELD - ' + shieldStatusText, W/2 - 260, 265);
+        ctx.font = '11px Arial';
+        ctx.fillStyle = '#aaaaaa';
+        ctx.fillText('Press 1-9 to buy/select, S to close | Use shield = K', W/2 - 260, 285);
+        ctx.fillStyle = '#888888';
+        ctx.fillText('A=Ally (2500) | P=Playable (1000) | E=Enemy', W/2 - 260, 300);
       }
 
       // flash overlay when board-clear used
