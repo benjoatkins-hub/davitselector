@@ -514,6 +514,9 @@
             }
 
             const level = levels[levelNum - 1];
+            for (let collectible of level.collectibles) {
+                collectible.collected = false;
+            }
             player.x = level.startX;
             player.y = level.startY;
             player.velocityY = 0;
@@ -1034,7 +1037,6 @@
             buttons[1].style.display = 'none';
             buttons[2].style.display = 'none';
             gameOverDiv.style.display = 'block';
-        }
         }
 
         function showLevelComplete() {
