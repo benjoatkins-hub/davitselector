@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rodha - Platform Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            background: linear-gradient(to bottom, #87CEEB, #E0F6FF);
+            border: 3px solid #333;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+        }
+
+        canvas {
+            display: block;
+            background: linear-gradient(to bottom, #87CEEB, #E0F6FF);
+        }
+
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #333;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px 15px;
+            border-radius: 5px;
+        }
+
+        #levelInfo {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: #333;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px 15px;
+            border-radius: 5px;
+        }
+
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 40px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 200;
+            display: none;
+            width: 300px;
+        }
+
+        #gameOver h2 {
+            font-size: 32px;
+            margin-bottom: 20px;
+        }
+
+        #gameOver p {
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+
+        #gameOver button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+
+        #gameOver button:hover {
+            background: #764ba2;
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: #333;
+            font-size: 12px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 8px 12px;
+            border-radius: 5px;
+        }
+
+        #collectibles {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            color: #333;
+            font-size: 14px;
+            font-weight: bold;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px 15px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="ui">
+            <span id="timerText">Time: 0s</span>
+        </div>
+        <div id="levelInfo">
+            <span id="levelText">Level: 1</span>
+        </div>
+        <div id="gameOver">
+            <h2 id="resultTitle">Level Complete!</h2>
+            <p id="resultText">Great job!</p>
+            <button onclick="nextLevel()">Next Level</button>
+            <button onclick="restartLevel()">Restart</button>
+            <button onclick="mainMenu()">Main Menu</button>
+        </div>
+        <div class="controls">
+            A D or ← → to move | ↑ to jump | Double jump available
+        </div>
+        <div id="collectibles">
+            Collected: <span id="collectedCount">0/2</span>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Game states
+        const STATES = {
+            MENU: 'menu',
+            PLAYING: 'playing',
+            LEVEL_COMPLETE: 'levelComplete',
+            GAME_OVER: 'gameOver'
+        };
+
+        let gameState = STATES.PLAYING;
+        let currentLevel = 1;
+        let levelTimer = 0;
+        let collectedItems = { item1: false, item2: false };
+
+        // Player object
+        const player = {
+            x: 50,
+            y: 400,
+            width: 20,
+            height: 30,
+            velocityY: 0,
+            velocityX: 0,
+            jumping: false,
+            canDoubleJump: true,
+            speed: 5,
+            jumpPower: 12,
+            color: '#FF6B6B'
+        };
+
+        // Input handling
+        const keys = {};
+        window.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            if ((e.key === 'ArrowUp') && gameState === STATES.PLAYING) {
+                jump();
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        function jump() {
+            if (player.jumping && !player.canDoubleJump) return;
+            
+            if (!player.jumping) {
+                player.velocityY = -player.jumpPower;
+                player.jumping = true;
+            } else if (player.canDoubleJump) {
+                player.velocityY = -player.jumpPower;
+                player.canDoubleJump = false;
+            }
+        }
+
+        // Platform and obstacle data
+        const levels = [
+            // Level 1
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 800, height: 50 },
+                    { x: 150, y: 450, width: 150, height: 20 },
+                    { x: 450, y: 450, width: 150, height: 20 },
+                    { x: 300, y: 350, width: 150, height: 20 },
+                    { x: 200, y: 250, width: 100, height: 20 },
+                    { x: 550, y: 300, width: 100, height: 20 },
+                    { x: 400, y: 150, width: 150, height: 20 }
+                ],
+                obstacles: [],
+                spikes: [],
+                collectibles: [
+                    { x: 200, y: 200, type: 1, collected: false },
+                    { x: 550, y: 250, type: 2, collected: false }
+                ],
+                portal: { x: 750, y: 100, width: 30, height: 50 },
+                startX: 50,
+                startY: 500
+            },
+            // Level 2
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 800, height: 50 },
+                    { x: 100, y: 450, width: 120, height: 20 },
+                    { x: 350, y: 400, width: 120, height: 20 },
+                    { x: 600, y: 450, width: 120, height: 20 },
+                    { x: 200, y: 300, width: 100, height: 20 },
+                    { x: 500, y: 280, width: 100, height: 20 },
+                    { x: 350, y: 180, width: 120, height: 20 }
+                ],
+                obstacles: [
+                    { x: 400, y: 500, width: 80, height: 20, moving: true, direction: 1, speed: 2 }
+                ],
+                spikes: [
+                    { x: 250, y: 525, width: 60, height: 15 }
+                ],
+                collectibles: [
+                    { x: 150, y: 350, type: 1, collected: false },
+                    { x: 450, y: 300, type: 3, collected: false }
+                ],
+                portal: { x: 700, y: 80, width: 30, height: 50 },
+                startX: 50,
+                startY: 500
+            },
+            // Level 3
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 800, height: 50 },
+                    { x: 80, y: 450, width: 100, height: 20 },
+                    { x: 250, y: 420, width: 100, height: 20 },
+                    { x: 450, y: 380, width: 100, height: 20 },
+                    { x: 650, y: 420, width: 100, height: 20 },
+                    { x: 150, y: 300, width: 100, height: 20 },
+                    { x: 550, y: 300, width: 100, height: 20 },
+                    { x: 350, y: 200, width: 100, height: 20 },
+                    { x: 600, y: 120, width: 100, height: 20 }
+                ],
+                obstacles: [
+                    { x: 200, y: 380, width: 60, height: 20, moving: true, direction: 1, speed: 2.5 },
+                    { x: 500, y: 450, width: 60, height: 20, moving: true, direction: -1, speed: 2.5 }
+                ],
+                spikes: [
+                    { x: 350, y: 525, width: 80, height: 15 }
+                ],
+                collectibles: [
+                    { x: 300, y: 300, type: 1, collected: false },
+                    { x: 600, y: 350, type: 4, collected: false }
+                ],
+                portal: { x: 750, y: 60, width: 30, height: 50 },
+                startX: 50,
+                startY: 500
+            },
+            // Level 4
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 800, height: 50 },
+                    { x: 100, y: 480, width: 100, height: 20 },
+                    { x: 300, y: 450, width: 100, height: 20 },
+                    { x: 500, y: 480, width: 100, height: 20 },
+                    { x: 200, y: 350, width: 100, height: 20 },
+                    { x: 550, y: 350, width: 80, height: 20 },
+                    { x: 350, y: 250, width: 100, height: 20 },
+                    { x: 600, y: 180, width: 100, height: 20 }
+                ],
+                obstacles: [
+                    { x: 100, y: 400, width: 50, height: 20, moving: true, direction: 1, speed: 3 }
+                ],
+                spikes: [
+                    { x: 220, y: 525, width: 60, height: 15 },
+                    { x: 520, y: 525, width: 60, height: 15 }
+                ],
+                collectibles: [
+                    { x: 100, y: 400, type: 1, collected: false },
+                    { x: 600, y: 300, type: 5, collected: false }
+                ],
+                portal: { x: 750, y: 100, width: 30, height: 50 },
+                startX: 50,
+                startY: 500
+            },
+            // Level 5
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 800, height: 50 },
+                    { x: 50, y: 450, width: 80, height: 20 },
+                    { x: 220, y: 420, width: 80, height: 20 },
+                    { x: 390, y: 380, width: 100, height: 20 },
+                    { x: 600, y: 420, width: 80, height: 20 },
+                    { x: 150, y: 280, width: 80, height: 20 },
+                    { x: 500, y: 280, width: 80, height: 20 },
+                    { x: 320, y: 150, width: 120, height: 20 }
+                ],
+                obstacles: [
+                    { x: 400, y: 500, width: 60, height: 20, moving: true, direction: 1, speed: 3 },
+                    { x: 200, y: 350, width: 50, height: 20, moving: true, direction: -1, speed: 2.5 }
+                ],
+                spikes: [
+                    { x: 280, y: 525, width: 60, height: 15 },
+                    { x: 450, y: 525, width: 60, height: 15 },
+                    { x: 650, y: 525, width: 60, height: 15 }
+                ],
+                collectibles: [
+                    { x: 150, y: 220, type: 1, collected: false },
+                    { x: 550, y: 220, type: 6, collected: false }
+                ],
+                portal: { x: 750, y: 60, width: 30, height: 50 },
+                startX: 50,
+                startY: 500
+            },
+            // Level 6
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 800, height: 50 },
+                    { x: 80, y: 480, width: 70, height: 20 },
+                    { x: 250, y: 440, width: 70, height: 20 },
+                    { x: 420, y: 400, width: 70, height: 20 },
+                    { x: 590, y: 440, width: 70, height: 20 },
+                    { x: 150, y: 320, width: 70, height: 20 },
+                    { x: 500, y: 320, width: 70, height: 20 },
+                    { x: 300, y: 220, width: 100, height: 20 },
+                    { x: 600, y: 140, width: 100, height: 20 }
+                ],
+                obstacles: [
+                    { x: 150, y: 400, width: 50, height: 20, moving: true, direction: 1, speed: 3.5 },
+                    { x: 550, y: 380, width: 50, height: 20, moving: true, direction: -1, speed: 3 }
+                ],
+                spikes: [
+                    { x: 200, y: 525, width: 50, height: 15 },
+                    { x: 350, y: 525, width: 50, height: 15 },
+                    { x: 500, y: 525, width: 50, height: 15 },
+                    { x: 650, y: 525, width: 50, height: 15 }
+                ],
+                collectibles: [
+                    { x: 200, y: 280, type: 1, collected: false },
+                    { x: 550, y: 280, type: 7, collected: false }
+                ],
+                portal: { x: 750, y: 80, width: 30, height: 50 },
+                startX: 50,
+                startY: 500
+            },
+            // Level 7
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 800, height: 50 },
+                    { x: 100, y: 460, width: 90, height: 20 },
+                    { x: 300, y: 420, width: 90, height: 20 },
+                    { x: 550, y: 460, width: 90, height: 20 },
+                    { x: 200, y: 320, width: 80, height: 20 },
+                    { x: 520, y: 300, width: 80, height: 20 },
+                    { x: 350, y: 180, width: 100, height: 20 },
+                    { x: 650, y: 240, width: 100, height: 20 }
+                ],
+                obstacles: [
+                    { x: 100, y: 350, width: 50, height: 20, moving: true, direction: 1, speed: 4 },
+                    { x: 550, y: 400, width: 50, height: 20, moving: true, direction: -1, speed: 3.5 },
+                    { x: 300, y: 500, width: 60, height: 20, moving: true, direction: 1, speed: 3 }
+                ],
+                spikes: [
+                    { x: 180, y: 525, width: 50, height: 15 },
+                    { x: 380, y: 525, width: 50, height: 15 },
+                    { x: 580, y: 525, width: 50, height: 15 }
+                ],
+                collectibles: [
+                    { x: 200, y: 280, type: 1, collected: false },
+                    { x: 550, y: 250, type: 8, collected: false }
+                ],
+                portal: { x: 750, y: 100, width: 30, height: 50 },
+                startX: 50,
+                startY: 500
+            },
+            // Level 8
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 800, height: 50 },
+                    { x: 80, y: 470, width: 80, height: 20 },
+                    { x: 250, y: 430, width: 80, height: 20 },
+                    { x: 450, y: 390, width: 80, height: 20 },
+                    { x: 650, y: 430, width: 80, height: 20 },
+                    { x: 150, y: 300, width: 70, height: 20 },
+                    { x: 400, y: 290, width: 70, height: 20 },
+                    { x: 650, y: 300, width: 70, height: 20 },
+                    { x: 300, y: 180, width: 80, height: 20 }
+                ],
+                obstacles: [
+                    { x: 120, y: 380, width: 50, height: 20, moving: true, direction: 1, speed: 4 },
+                    { x: 450, y: 350, width: 50, height: 20, moving: true, direction: -1, speed: 3.5 },
+                    { x: 250, y: 520, width: 45, height: 20, moving: true, direction: 1, speed: 3.5 }
+                ],
+                spikes: [
+                    { x: 160, y: 525, width: 45, height: 15 },
+                    { x: 310, y: 525, width: 45, height: 15 },
+                    { x: 460, y: 525, width: 45, height: 15 },
+                    { x: 610, y: 525, width: 45, height: 15 }
+                ],
+                collectibles: [
+                    { x: 150, y: 250, type: 1, collected: false },
+                    { x: 650, y: 250, type: 9, collected: false }
+                ],
+                portal: { x: 750, y: 60, width: 30, height: 50 },
+                startX: 50,
+                startY: 500
+            },
+            // Level 9
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 800, height: 50 },
+                    { x: 60, y: 480, width: 75, height: 20 },
+                    { x: 220, y: 440, width: 75, height: 20 },
+                    { x: 380, y: 400, width: 75, height: 20 },
+                    { x: 540, y: 440, width: 75, height: 20 },
+                    { x: 700, y: 480, width: 75, height: 20 },
+                    { x: 120, y: 300, width: 70, height: 20 },
+                    { x: 380, y: 280, width: 70, height: 20 },
+                    { x: 640, y: 300, width: 70, height: 20 },
+                    { x: 300, y: 160, width: 100, height: 20 }
+                ],
+                obstacles: [
+                    { x: 100, y: 360, width: 50, height: 20, moving: true, direction: 1, speed: 4.5 },
+                    { x: 400, y: 340, width: 50, height: 20, moving: true, direction: -1, speed: 4 },
+                    { x: 200, y: 500, width: 45, height: 20, moving: true, direction: 1, speed: 4 },
+                    { x: 600, y: 380, width: 45, height: 20, moving: true, direction: -1, speed: 3.5 }
+                ],
+                spikes: [
+                    { x: 140, y: 525, width: 40, height: 15 },
+                    { x: 280, y: 525, width: 40, height: 15 },
+                    { x: 420, y: 525, width: 40, height: 15 },
+                    { x: 560, y: 525, width: 40, height: 15 },
+                    { x: 700, y: 525, width: 40, height: 15 }
+                ],
+                collectibles: [
+                    { x: 150, y: 210, type: 1, collected: false },
+                    { x: 650, y: 210, type: 10, collected: false }
+                ],
+                portal: { x: 750, y: 80, width: 30, height: 50 },
+                startX: 50,
+                startY: 500
+            },
+            // Level 10
+            {
+                platforms: [
+                    { x: 0, y: 550, width: 800, height: 50 },
+                    { x: 50, y: 470, width: 70, height: 20 },
+                    { x: 180, y: 430, width: 70, height: 20 },
+                    { x: 310, y: 390, width: 70, height: 20 },
+                    { x: 440, y: 350, width: 70, height: 20 },
+                    { x: 570, y: 390, width: 70, height: 20 },
+                    { x: 700, y: 430, width: 70, height: 20 },
+                    { x: 100, y: 270, width: 60, height: 20 },
+                    { x: 350, y: 260, width: 60, height: 20 },
+                    { x: 600, y: 270, width: 60, height: 20 },
+                    { x: 300, y: 140, width: 100, height: 20 }
+                ],
+                obstacles: [
+                    { x: 80, y: 350, width: 50, height: 20, moving: true, direction: 1, speed: 5 },
+                    { x: 300, y: 330, width: 50, height: 20, moving: true, direction: -1, speed: 4.5 },
+                    { x: 500, y: 320, width: 50, height: 20, moving: true, direction: 1, speed: 4.5 },
+                    { x: 150, y: 480, width: 45, height: 20, moving: true, direction: -1, speed: 4 },
+                    { x: 550, y: 480, width: 45, height: 20, moving: true, direction: 1, speed: 4 }
+                ],
+                spikes: [
+                    { x: 120, y: 525, width: 40, height: 15 },
+                    { x: 250, y: 525, width: 40, height: 15 },
+                    { x: 380, y: 525, width: 40, height: 15 },
+                    { x: 510, y: 525, width: 40, height: 15 },
+                    { x: 640, y: 525, width: 40, height: 15 }
+                ],
+                collectibles: [
+                    { x: 150, y: 200, type: 1, collected: false },
+                    { x: 400, y: 180, type: 11, collected: false, isFinalBall: true }
+                ],
+                portal: { x: 750, y: 40, width: 30, height: 50 },
+                startX: 50,
+                startY: 500
+            }
+        ];
+
+        function loadLevel(levelNum) {
+            if (levelNum > levels.length) {
+                alert('🎉 All levels complete! You won the game!');
+                currentLevel = 1;
+                loadLevel(1);
+                return;
+            }
+
+            const level = levels[levelNum - 1];
+            player.x = level.startX;
+            player.y = level.startY;
+            player.velocityY = 0;
+            player.velocityX = 0;
+            player.jumping = false;
+            player.canDoubleJump = true;
+            levelTimer = 0;
+            currentLevel = levelNum;
+            collectedItems = { item1: false, item2: false };
+        }
+
+        function updatePlayer() {
+            // Gravity
+            player.velocityY += 0.6;
+
+            // Horizontal movement
+            player.velocityX = 0;
+            if (keys['a'] || keys['arrowleft']) {
+                player.velocityX = -player.speed;
+            }
+            if (keys['d'] || keys['arrowright']) {
+                player.velocityX = player.speed;
+            }
+
+            player.x += player.velocityX;
+            player.y += player.velocityY;
+
+            // Boundary check (wrap around)
+            if (player.x < -20) player.x = canvas.width + 20;
+            if (player.x > canvas.width + 20) player.x = -20;
+
+            // Check if fell off the map
+            if (player.y > canvas.height) {
+                loadLevel(currentLevel);
+            }
+
+            const level = levels[currentLevel - 1];
+
+            // Platform collision
+            player.jumping = true;
+            for (let platform of level.platforms) {
+                if (
+                    player.velocityY >= 0 &&
+                    player.y + player.height >= platform.y &&
+                    player.y + player.height <= platform.y + platform.height + 10 &&
+                    player.x + player.width > platform.x &&
+                    player.x < platform.x + platform.width
+                ) {
+                    player.y = platform.y - player.height;
+                    player.velocityY = 0;
+                    player.jumping = false;
+                    player.canDoubleJump = true;
+                }
+            }
+
+            // Obstacle collision (moving platforms)
+            for (let obstacle of level.obstacles) {
+                if (
+                    player.velocityY >= 0 &&
+                    player.y + player.height >= obstacle.y &&
+                    player.y + player.height <= obstacle.y + obstacle.height + 10 &&
+                    player.x + player.width > obstacle.x &&
+                    player.x < obstacle.x + obstacle.width
+                ) {
+                    player.y = obstacle.y - player.height;
+                    player.velocityY = 0;
+                    player.jumping = false;
+                    player.canDoubleJump = true;
+                } else if (
+                    player.x + player.width > obstacle.x &&
+                    player.x < obstacle.x + obstacle.width &&
+                    player.y + player.height > obstacle.y &&
+                    player.y < obstacle.y + obstacle.height
+                ) {
+                    // Hit from side or top while not landing
+                    loadLevel(currentLevel);
+                }
+            }
+
+            // Spike collision
+            for (let spike of level.spikes) {
+                if (
+                    player.x + player.width > spike.x &&
+                    player.x < spike.x + spike.width &&
+                    player.y + player.height > spike.y &&
+                    player.y < spike.y + spike.height
+                ) {
+                    loadLevel(currentLevel);
+                }
+            }
+
+            // Collectible collision
+            for (let collectible of level.collectibles) {
+                if (!collectible.collected &&
+                    player.x + player.width > collectible.x &&
+                    player.x < collectible.x + 20 &&
+                    player.y + player.height > collectible.y &&
+                    player.y < collectible.y + 20
+                ) {
+                    collectible.collected = true;
+                    if (collectible.type === 1) {
+                        collectedItems.item1 = true;
+                    } else {
+                        collectedItems.item2 = true;
+                    }
+                    updateCollectiblesUI();
+                }
+            }
+
+            // Portal collision - requires all collectibles
+            const allCollected = collectedItems.item1 && collectedItems.item2;
+            const portal = level.portal;
+            if (allCollected &&
+                player.x + player.width > portal.x &&
+                player.x < portal.x + portal.width &&
+                player.y + player.height > portal.y &&
+                player.y < portal.y + portal.height
+            ) {
+                if (currentLevel === 10) {
+                    gameState = 'THE_END';
+                } else {
+                    gameState = STATES.LEVEL_COMPLETE;
+                }
+            }
+        }
+
+        function updateCollectiblesUI() {
+            const count = (collectedItems.item1 ? 1 : 0) + (collectedItems.item2 ? 1 : 0);
+            document.getElementById('collectedCount').textContent = `${count}/2`;
+        }
+
+        function updateObstacles() {
+            const level = levels[currentLevel - 1];
+            for (let obstacle of level.obstacles) {
+                if (obstacle.moving) {
+                    obstacle.x += obstacle.speed * obstacle.direction;
+                    if (obstacle.x < 0 || obstacle.x + obstacle.width > canvas.width) {
+                        obstacle.direction *= -1;
+                    }
+                }
+            }
+        }
+
+        function drawGame() {
+            // Clear canvas
+            ctx.fillStyle = '#87CEEB';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const level = levels[currentLevel - 1];
+
+            // Draw platforms
+            ctx.fillStyle = '#8B4513';
+            for (let platform of level.platforms) {
+                ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                ctx.strokeStyle = '#654321';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(platform.x, platform.y, platform.width, platform.height);
+            }
+
+            // Draw obstacles
+            ctx.fillStyle = '#FF0000';
+            for (let obstacle of level.obstacles) {
+                ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+                ctx.strokeStyle = '#CC0000';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+            }
+
+            // Draw spikes
+            ctx.fillStyle = '#FFD700';
+            for (let spike of level.spikes) {
+                // Draw triangle spikes
+                const spikeWidth = spike.width / 4;
+                for (let i = 0; i < 4; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(spike.x + i * spikeWidth, spike.y + spike.height);
+                    ctx.lineTo(spike.x + i * spikeWidth + spikeWidth / 2, spike.y);
+                    ctx.lineTo(spike.x + (i + 1) * spikeWidth, spike.y + spike.height);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.strokeStyle = '#FFA500';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+            }
+
+            // Draw collectibles
+            for (let collectible of level.collectibles) {
+                if (!collectible.collected) {
+                    ctx.save();
+                    
+                    if (collectible.isFinalBall) {
+                        // Draw the final ball of light
+                        const gradient = ctx.createRadialGradient(collectible.x + 10, collectible.y + 10, 2, collectible.x + 10, collectible.y + 10, 12);
+                        gradient.addColorStop(0, '#FFFF99');
+                        gradient.addColorStop(0.5, '#FFFF00');
+                        gradient.addColorStop(1, '#FFD700');
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(collectible.x + 10, collectible.y + 10, 10, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.strokeStyle = '#FFA500';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    } else if (collectible.type === 1) {
+                        // Draw the Golden Trapezoid (always present)
+                        ctx.fillStyle = '#FFD700';
+                        ctx.beginPath();
+                        ctx.moveTo(collectible.x + 2, collectible.y + 4);
+                        ctx.lineTo(collectible.x + 18, collectible.y + 4);
+                        ctx.lineTo(collectible.x + 16, collectible.y + 14);
+                        ctx.lineTo(collectible.x + 4, collectible.y + 14);
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.fillStyle = '#87CEEB';
+                        ctx.fillRect(collectible.x + 5, collectible.y + 7, 10, 4);
+                        ctx.strokeStyle = '#DAA520';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(collectible.x + 2, collectible.y + 4, 16, 10);
+                    } else {
+                        // Draw different capsule types by item number
+                        const colors = ['#FFD700', '#87CEEB', '#87CEEB', '#FFB347', '#90EE90', '#FFB6C1', '#9370DB', '#20B2AA', '#FF6347', '#FFD700'];
+                        ctx.fillStyle = colors[collectible.type - 1] || '#FFD700';
+                        ctx.beginPath();
+                        ctx.ellipse(collectible.x + 10, collectible.y + 10, 8, 10, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.strokeStyle = '#333333';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                        
+                        // Add number to capsule
+                        ctx.fillStyle = '#333333';
+                        ctx.font = 'bold 10px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(collectible.type, collectible.x + 10, collectible.y + 13);
+                    }
+                    
+                    ctx.restore();
+                }
+            }
+
+            // Draw portal
+            const allCollected = collectedItems.item1 && collectedItems.item2;
+            if (!allCollected) {
+                ctx.fillStyle = '#CCCCCC';
+                ctx.strokeStyle = '#666666';
+            } else {
+                ctx.fillStyle = '#FFD700';
+                ctx.strokeStyle = '#FFA500';
+            }
+            ctx.beginPath();
+            ctx.arc(level.portal.x + level.portal.width / 2, level.portal.y + level.portal.height / 2, 15, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // Draw lock symbol if not all collected
+            if (!allCollected) {
+                ctx.strokeStyle = '#FF0000';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(level.portal.x + level.portal.width / 2, level.portal.y + level.portal.height / 2, 8, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.fillStyle = '#FF0000';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('🔒', level.portal.x + level.portal.width / 2, level.portal.y + level.portal.height / 2 + 4);
+            }
+
+            // Draw player (detailed character matching the image)
+            const px = player.x - 5;
+            const py = player.y - 10;
+            const scale = 1.5;
+
+            // Draw large shadow under character
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.beginPath();
+            ctx.ellipse(px + 10 * scale, py + 35 * scale, 8 * scale, 2 * scale, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw large purple wings with gradient and detail
+            const wingGradient = ctx.createLinearGradient(px - 10 * scale, py + 5 * scale, px - 20 * scale, py - 5 * scale);
+            wingGradient.addColorStop(0, '#7B4FBF');
+            wingGradient.addColorStop(1, '#4A2870');
+            
+            // Left wing - larger and more detailed
+            ctx.fillStyle = wingGradient;
+            ctx.beginPath();
+            ctx.moveTo(px + 2 * scale, py + 12 * scale);
+            ctx.lineTo(px - 18 * scale, py - 8 * scale);
+            ctx.lineTo(px - 10 * scale, py + 2 * scale);
+            ctx.lineTo(px - 8 * scale, py + 22 * scale);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = '#2A0F50';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Wing feather details
+            ctx.strokeStyle = '#5B3A7D';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 4; i++) {
+                ctx.beginPath();
+                ctx.moveTo(px - 5 * scale - i * 3 * scale, py - 2 * scale);
+                ctx.lineTo(px - 10 * scale - i * 2 * scale, py + 18 * scale);
+                ctx.stroke();
+            }
+            
+            // Right wing
+            ctx.fillStyle = wingGradient;
+            ctx.beginPath();
+            ctx.moveTo(px + 18 * scale, py + 12 * scale);
+            ctx.lineTo(px + 38 * scale, py - 8 * scale);
+            ctx.lineTo(px + 30 * scale, py + 2 * scale);
+            ctx.lineTo(px + 28 * scale, py + 22 * scale);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = '#2A0F50';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Right wing feather details
+            ctx.strokeStyle = '#5B3A7D';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 4; i++) {
+                ctx.beginPath();
+                ctx.moveTo(px + 15 * scale + i * 3 * scale, py - 2 * scale);
+                ctx.lineTo(px + 20 * scale + i * 2 * scale, py + 18 * scale);
+                ctx.stroke();
+            }
+
+            // Draw massive orange torso/body
+            const bodyGradient = ctx.createRadialGradient(px + 10 * scale, py + 18 * scale, 2 * scale, px + 10 * scale, py + 18 * scale, 12 * scale);
+            bodyGradient.addColorStop(0, '#FFB366');
+            bodyGradient.addColorStop(1, '#FF8C42');
+            ctx.fillStyle = bodyGradient;
+            ctx.beginPath();
+            ctx.ellipse(px + 10 * scale, py + 20 * scale, 11 * scale, 14 * scale, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw chest plate armor (dark gray with gradient)
+            const armorGradient = ctx.createLinearGradient(px + 4 * scale, py + 12 * scale, px + 16 * scale, py + 12 * scale);
+            armorGradient.addColorStop(0, '#666666');
+            armorGradient.addColorStop(0.5, '#AAAAAA');
+            armorGradient.addColorStop(1, '#666666');
+            ctx.fillStyle = armorGradient;
+            ctx.fillRect(px + 4 * scale, py + 12 * scale, 12 * scale, 6 * scale);
+            ctx.strokeStyle = '#333333';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(px + 4 * scale, py + 12 * scale, 12 * scale, 6 * scale);
+
+            // Draw blue body markings/stripes
+            ctx.fillStyle = '#3366CC';
+            ctx.fillRect(px + 5 * scale, py + 17 * scale, 10 * scale, 1.5 * scale);
+            ctx.fillRect(px + 5 * scale, py + 22 * scale, 10 * scale, 1.5 * scale);
+
+            // Draw waist armor
+            ctx.fillStyle = armorGradient;
+            ctx.fillRect(px + 6 * scale, py + 28 * scale, 8 * scale, 3 * scale);
+            ctx.strokeStyle = '#333333';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(px + 6 * scale, py + 28 * scale, 8 * scale, 3 * scale);
+
+            // Draw shoulders with armor
+            ctx.fillStyle = '#888888';
+            ctx.beginPath();
+            ctx.ellipse(px + 2 * scale, py + 15 * scale, 4 * scale, 5 * scale, -0.4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#888888';
+            ctx.beginPath();
+            ctx.ellipse(px + 18 * scale, py + 15 * scale, 4 * scale, 5 * scale, 0.4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw head (orange)
+            const headGradient = ctx.createRadialGradient(px + 10 * scale, py + 6 * scale, 1 * scale, px + 10 * scale, py + 6 * scale, 7 * scale);
+            headGradient.addColorStop(0, '#FFB366');
+            headGradient.addColorStop(1, '#FF8C42');
+            ctx.fillStyle = headGradient;
+            ctx.beginPath();
+            ctx.ellipse(px + 10 * scale, py + 6 * scale, 7 * scale, 6 * scale, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw snout/jaw area
+            ctx.fillStyle = '#FFB366';
+            ctx.beginPath();
+            ctx.ellipse(px + 10 * scale, py + 10 * scale, 5 * scale, 3 * scale, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw horn (gray with shading)
+            ctx.fillStyle = '#777777';
+            ctx.beginPath();
+            ctx.moveTo(px + 8 * scale, py + 1 * scale);
+            ctx.lineTo(px + 12 * scale, py - 6 * scale);
+            ctx.lineTo(px + 12 * scale, py + 2 * scale);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = '#444444';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Draw horn highlight
+            ctx.strokeStyle = '#BBBBBB';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(px + 9.5 * scale, py - 2 * scale);
+            ctx.lineTo(px + 11 * scale, py - 4 * scale);
+            ctx.stroke();
+
+            // Draw eyes (large, bright blue)
+            ctx.fillStyle = '#4499FF';
+            ctx.beginPath();
+            ctx.arc(px + 6 * scale, py + 5 * scale, 2 * scale, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#2255AA';
+            ctx.beginPath();
+            ctx.arc(px + 6 * scale, py + 5 * scale, 1.2 * scale, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(px + 6.5 * scale, py + 4.3 * scale, 0.6 * scale, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#4499FF';
+            ctx.beginPath();
+            ctx.arc(px + 14 * scale, py + 5 * scale, 2 * scale, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#2255AA';
+            ctx.beginPath();
+            ctx.arc(px + 14 * scale, py + 5 * scale, 1.2 * scale, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.arc(px + 14.5 * scale, py + 4.3 * scale, 0.6 * scale, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw snout ridge
+            ctx.strokeStyle = '#FF7030';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(px + 10 * scale, py + 3 * scale);
+            ctx.lineTo(px + 10 * scale, py + 11 * scale);
+            ctx.stroke();
+
+            // Draw upper legs (muscular orange)
+            ctx.fillStyle = '#FF9955';
+            ctx.beginPath();
+            ctx.ellipse(px + 5 * scale, py + 32 * scale, 3.5 * scale, 6 * scale, -0.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#FF9955';
+            ctx.beginPath();
+            ctx.ellipse(px + 15 * scale, py + 32 * scale, 3.5 * scale, 6 * scale, 0.2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw leg armor/protection
+            ctx.fillStyle = '#777777';
+            ctx.fillRect(px + 3 * scale, py + 32 * scale, 4 * scale, 3 * scale);
+            ctx.fillRect(px + 13 * scale, py + 32 * scale, 4 * scale, 3 * scale);
+
+            // Draw large tan claws/feet with detail
+            ctx.fillStyle = '#D9A574';
+            // Left foot - multiple claws
+            ctx.beginPath();
+            ctx.ellipse(px + 4 * scale, py + 38 * scale, 2 * scale, 2.5 * scale, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillRect(px + 3 * scale, py + 39.5 * scale, 1.5 * scale, 1.5 * scale);
+            ctx.fillRect(px + 4.8 * scale, py + 39.5 * scale, 1.5 * scale, 1.5 * scale);
+
+            // Right foot
+            ctx.beginPath();
+            ctx.ellipse(px + 16 * scale, py + 38 * scale, 2 * scale, 2.5 * scale, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillRect(px + 15 * scale, py + 39.5 * scale, 1.5 * scale, 1.5 * scale);
+            ctx.fillRect(px + 16.8 * scale, py + 39.5 * scale, 1.5 * scale, 1.5 * scale);
+        }
+
+        function update() {
+            if (gameState === STATES.PLAYING) {
+                updatePlayer();
+                updateObstacles();
+                levelTimer += 1 / 60;
+                document.getElementById('timerText').textContent = `Time: ${Math.floor(levelTimer)}s`;
+                document.getElementById('levelText').textContent = `Level: ${currentLevel}/${levels.length}`;
+            }
+        }
+
+        function render() {
+            drawGame();
+        }
+
+        function gameLoop() {
+            update();
+            render();
+
+            if (gameState === STATES.LEVEL_COMPLETE) {
+                showLevelComplete();
+                gameState = STATES.LEVEL_COMPLETE;
+            } else if (gameState === 'THE_END') {
+                showTheEnd();
+                gameState = 'THE_END';
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function showTheEnd() {
+            const gameOverDiv = document.getElementById('gameOver');
+            document.getElementById('resultTitle').textContent = 'The End!';
+            document.getElementById('resultText').textContent = 'You completed all levels!';
+            const buttons = gameOverDiv.querySelectorAll('button');
+            buttons[0].textContent = 'Play Again';
+            buttons[0].onclick = () => {
+                currentLevel = 1;
+                loadLevel(1);
+                updateCollectiblesUI();
+                gameOverDiv.style.display = 'none';
+                gameState = STATES.PLAYING;
+            };
+            buttons[1].style.display = 'none';
+            buttons[2].style.display = 'none';
+            gameOverDiv.style.display = 'block';
+        }
+        }
+
+        function showLevelComplete() {
+            const gameOverDiv = document.getElementById('gameOver');
+            const buttons = gameOverDiv.querySelectorAll('button');
+            buttons[0].textContent = 'Next Level';
+            buttons[0].onclick = () => nextLevel();
+            buttons[0].style.display = 'inline-block';
+            buttons[1].textContent = 'Restart';
+            buttons[1].onclick = () => restartLevel();
+            buttons[1].style.display = 'inline-block';
+            buttons[2].textContent = 'Main Menu';
+            buttons[2].onclick = () => mainMenu();
+            buttons[2].style.display = 'inline-block';
+            document.getElementById('resultTitle').textContent = 'Level Complete!';
+            document.getElementById('resultText').textContent = `Completed in ${Math.floor(levelTimer)} seconds!`;
+            gameOverDiv.style.display = 'block';
+        }
+
+        function nextLevel() {
+            const gameOverDiv = document.getElementById('gameOver');
+            gameOverDiv.style.display = 'none';
+            currentLevel++;
+            if (currentLevel > levels.length) {
+                alert('🎉 All levels complete! You won the game!');
+                currentLevel = 1;
+            }
+            loadLevel(currentLevel);
+            updateCollectiblesUI();
+            gameState = STATES.PLAYING;
+        }
+
+        function restartLevel() {
+            const gameOverDiv = document.getElementById('gameOver');
+            gameOverDiv.style.display = 'none';
+            loadLevel(currentLevel);
+            updateCollectiblesUI();
+            gameState = STATES.PLAYING;
+        }
+
+        function mainMenu() {
+            const gameOverDiv = document.getElementById('gameOver');
+            gameOverDiv.style.display = 'none';
+            currentLevel = 1;
+            loadLevel(1);
+            updateCollectiblesUI();
+            gameState = STATES.PLAYING;
+        }
+
+        // Start the game
+        loadLevel(1);
+        updateCollectiblesUI();
+        gameLoop();
+    </script>
+</body>
+</html>
